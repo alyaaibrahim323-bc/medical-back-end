@@ -35,4 +35,13 @@ return [
         ],
     ],
 
+    // config/services.php
+'paymob' => [
+  'api_key' => env('PAYMOB_API_KEY'),
+  'hmac'    => env('PAYMOB_HMAC'),
+  'base_url'=> env('PAYMOB_BASE','https://accept.paymob.com/api'),
+  'integration_id_card' => (int) env('PAYMOB_INTEGRATION_ID_CARD', 0),
+],
+
+
 ];
