@@ -88,25 +88,53 @@ class TherapistController extends Controller
         ]);
     }
 
-    // ============ Availability (لشاشة Date & Time) ============
-    public function availability($id, Request $request, TherapistAvailabilityService $availability)
-    {
-        $request->validate([
-            'from' => ['required','date'],
-            'to'   => ['required','date','after_or_equal:from'],
-            'slot' => ['nullable','integer','min:15','max:240'],
-        ]);
 
-        $t = Therapist::where('is_active', true)->findOrFail($id);
+   public function availability($id, Request $request, TherapistAvailabilityService $availability)
+{
+    $request->validate([
+        'from' => ['nullable','date'],
+        'to'   => ['nullable','date','after_or_equal:from'],
+        'slot' => ['nullable','integer','min:15','max:240'],
+    ]);
 
-        $from = Carbon::parse($request->from)->startOfDay();
-        $to   = Carbon::parse($request->to)->endOfDay();
-        $slot = (int) ($request->slot ?? 60);
+    $t = Therapist::where('is_active', true)->findOrFail($id);
 
-        $days = $availability->slotsForRange($t->id, $from, $to, $slot);
+    $from = $request->filled('from')
+        ? Carbon::parse($request->from)->startOfDay()
+        : now()->startOfMonth()->startOfDay();
 
-        return response()->json(['data' => $days]);
-    }
+    $to = $request->filled('to')
+        ? Carbon::parse($request->to)->endOfDay()
+        : now()->endOfMonth()->endOfDay();
+
+    $slot = (int) ($request->slot ?? 60);
+
+    $days = $availability->slotsForRange($t->id, $from, $to, $slot);
+
+    $normalized = collect($days)->map(function (array $slots, string $date) {
+        $carbonDate = Carbon::parse($date);
+
+        return [
+            'date'      => $carbonDate->toDateString(),
+            'day_name'  => $carbonDate->format('D'),
+            'has_slots' => count($slots) > 0,
+            'slots'     => collect($slots)->map(function (array $s) {
+                $start = Carbon::parse($s['start']);
+                $end   = Carbon::parse($s['end']);
+
+                return [
+                    'start'        => $start->toIso8601String(),
+                    'end'          => $end->toIso8601String(),
+                    'duration_min' => $s['duration_min'] ?? $start->diffInMinutes($end),
+                    'time_label'   => $start->format('h:i A'),
+                ];
+            })->values(),
+        ];
+    })->values();
+
+    return response()->json(['data' => $normalized]);
+}
+
 
     // ============ Packages TAB (أول شاشة في الصورة) ============
     public function packages($id, Request $request)

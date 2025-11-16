@@ -6,6 +6,8 @@ use App\Models\TherapistSchedule;
 use App\Models\TherapistTimeoff;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
+use App\Models\TherapySession;
+
 
 class TherapistAvailabilityService
 {
@@ -49,5 +51,22 @@ class TherapistAvailabilityService
         }
 
         return $days;
+    }
+    public function isSlotFree(int $therapistId, Carbon $start, Carbon $end): bool
+    {
+        return ! TherapySession::where('therapist_id', $therapistId)
+            // ما نعدّش الجلسات اللى اتلغت أو no_show
+            ->whereNotIn('status', [
+                TherapySession::STATUS_CANCELLED,
+                TherapySession::STATUS_NO_SHOW,
+            ])
+            // overlap check:
+            // (session_start < طلب_end) && (session_end > طلب_start)
+            ->where('scheduled_at', '<', $end)
+            ->whereRaw(
+                'DATE_ADD(scheduled_at, INTERVAL duration_min MINUTE) > ?',
+                [$start]
+            )
+            ->exists();
     }
 }
