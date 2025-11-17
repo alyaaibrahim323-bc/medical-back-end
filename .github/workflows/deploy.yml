@@ -1,19 +1,20 @@
-name: Deploy via Ansible (build on VPS, no migrations)
+name: Deploy bondwell-backend via Ansible (build on VPS, no migrations)
 
 on:
   push:
-    branches: [ main1 ]
+    branches: [ main1 ]   # غيّرها لـ main1 لو الريبو بتاعك اسمه main1
   workflow_dispatch:
 
 concurrency:
-  group: rashaka-deploy
+  group: bondwell-backend-deploy
   cancel-in-progress: true
 
 jobs:
   deploy:
-    runs-on: ubuntu-22.04  # أبعد عن زحام ubuntu-latest
+    runs-on: ubuntu-22.04
+
     steps:
-      - name: Checkout (for ansible files & source)
+      - name: Checkout repo (source + ansible files)
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -35,19 +36,19 @@ jobs:
           chmod 600 vps_key
           ssh-keygen -y -f vps_key > /dev/null
 
-      # نبني أرتيفاكت من السورس بدل ما ال-VPS يعمل git pull
+      # نطلع أرتيفاكت من السورس بدل ما ال-VPS يعمل git pull
       - name: Create release artifact (tar.gz)
         run: |
-          git archive --format=tar.gz -o /tmp/release.tar.gz HEAD
-          ls -lh /tmp/release.tar.gz 
+          git archive --format=tar.gz -o /tmp/bondwell-backend.tar.gz HEAD
+          ls -lh /tmp/bondwell-backend.tar.gz
 
       - name: Copy artifact to VPS
         run: |
           ssh -i vps_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p /root/Dashboard-Rashaka-V9"
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p /root/bondwell-backend"
           scp -i vps_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            /tmp/release.tar.gz \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/root/Dashboard-Rashaka-V9/release.tar.gz
+            /tmp/bondwell-backend.tar.gz \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/root/bondwell-backend/release.tar.gz
 
       - name: Run Ansible Playbook
         env:
@@ -58,4 +59,4 @@ jobs:
             -u "${{ secrets.VPS_USER }}" \
             --private-key vps_key \
             -b \
-            -e "artifact=/root/Dashboard-Rashaka-V9/release.tar.gz"
+            -e "project_dir=/root/bondwell-backend artifact=/root/bondwell-backend/release.tar.gz"
