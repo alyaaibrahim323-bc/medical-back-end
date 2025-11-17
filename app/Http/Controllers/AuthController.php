@@ -39,7 +39,7 @@ class AuthController extends Controller
         $u->assignRole('user');
 
         // Generate + store OTP
-        $otp = str_pad((string)random_int(0, 999999), 4, '0', STR_PAD_LEFT);
+        $otp = str_pad((string)random_int(0, 9999), 4, '0', STR_PAD_LEFT);
         $expiresMinutes = (int) config('auth.otp_expires', (int)env('AUTH_OTP_EXPIRES', 10));
 
         EmailOtp::updateOrCreate(
@@ -122,7 +122,7 @@ class AuthController extends Controller
     {
         $data = $r->validate([
             'email' => ['required','email','exists:users,email'],
-            'code'  => ['required','digits:6'],
+            'code'  => ['required','digits:4'],
         ]);
 
         $u = User::where('email', $data['email'])->firstOrFail();
@@ -175,7 +175,7 @@ class AuthController extends Controller
             return response()->json(['message'=>"Try again in {$wait}s"], 429);
         }
 
-        $otp = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $otp = str_pad((string)random_int(0, 9999), 4, '0', STR_PAD_LEFT);
         $expiresMinutes = (int) config('auth.otp_expires', (int)env('AUTH_OTP_EXPIRES', 10));
 
         $rec->code_hash   = Hash::make($otp);
