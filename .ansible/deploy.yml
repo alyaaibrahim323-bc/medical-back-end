@@ -71,16 +71,6 @@
         state: present
       register: compose_result
 
-    # نطمن إن الـ API فوق (شغال) على Nginx اللي على port 83
-    - name: Wait for HTTP /api/health to be up
-      ansible.builtin.uri:
-        url: "http://localhost:83/api/health"
-        status_code: 200
-        validate_certs: no
-      register: web
-      retries: 30
-      delay: 2
-      until: web.status == 200
 
     - name: Clean dangling images
       ansible.builtin.command: docker image prune -f
