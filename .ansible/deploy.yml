@@ -1,10 +1,11 @@
-- name: Build & deploy Rashaka Dashboard on VPS (no migrations)
+- name: Build & deploy bondwell-backend on VPS (no migrations)
   hosts: all
   become: true
+
   vars:
     ansible_python_interpreter: /usr/bin/python3
-    project_dir: /root/Dashboard-Rashaka-V9
-    artifact: "{{ project_dir }}/release.tar.gz"   # جاي من الworkflow
+    project_dir: /root/bondwell-backend
+    artifact: "{{ project_dir }}/release.tar.gz"
     build_id: "{{ ansible_date_time.epoch }}"
     ansible_ssh_common_args: "-o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o TCPKeepAlive=yes -o ControlPersist=60s"
 
@@ -27,29 +28,31 @@
         state: directory
         mode: "0755"
 
-    # بديل الـ git: نفك الأرتيفاكت اللي الworkflow بعته
+    # نفك الأرتيفاكت اللي جاي من GitHub Action
     - name: Extract uploaded artifact
       ansible.builtin.unarchive:
         src: "{{ artifact }}"
         dest: "{{ project_dir }}"
         remote_src: yes
-        # لو حابب تنظف الملفات القديمة قبل الفك:
-        # extra_opts: [ "--overwrite" ]
 
+    # نضمن إن شبكة Caddy الخارجية موجودة (web) لأن docker-compose.yml عامل:
+    # networks:
+    #   web:
+    #     external: true
     - name: Ensure external Docker networks exist
       community.docker.docker_network:
         name: "{{ item }}"
         state: present
       loop:
-        - rashaka-app
         - web
 
-    - name: Build local image laravel-app:latest (cache bust with BUILD_ID)
+    # نبني صورة bondwell-backend-app (هي اللي docker compose بيستخدمها لـ service app)
+    - name: Build local image bondwell-backend-app (cache bust with BUILD_ID)
       community.docker.docker_image:
-        name: laravel-app
+        name: bondwell-backend-app
         tag: latest
         source: build
-        force_source: true 
+        force_source: true
         build:
           path: "{{ project_dir }}"
           pull: yes
@@ -58,7 +61,7 @@
             BUILD_ID: "{{ build_id }}"
       register: build_result
 
-    # تأكد docker-compose.yml فيه image: "laravel-app:latest"
+    # نشغل / نعمل restart للـ stack باستخدام docker compose v2
     - name: Restart stack with the new image
       community.docker.docker_compose_v2:
         project_src: "{{ project_dir }}"
@@ -68,9 +71,10 @@
         state: present
       register: compose_result
 
-    - name: (Optional) Wait for HTTP to be up
+    # نطمن إن الـ API فوق (شغال) على Nginx اللي على port 83
+    - name: Wait for HTTP /api/health to be up
       ansible.builtin.uri:
-        url: http://localhost:8080/
+        url: "http://localhost:83/api/health"
         status_code: 200
         validate_certs: no
       register: web
