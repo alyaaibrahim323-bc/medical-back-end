@@ -1,0 +1,83 @@
+- name: Build & deploy Rashaka Dashboard on VPS (no migrations)
+  hosts: all
+  become: true
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    project_dir: /root/Dashboard-Rashaka-V9
+    artifact: "{{ project_dir }}/release.tar.gz"   # جاي من الworkflow
+    build_id: "{{ ansible_date_time.epoch }}"
+    ansible_ssh_common_args: "-o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o TCPKeepAlive=yes -o ControlPersist=60s"
+
+  pre_tasks:
+    - name: Ensure base packages (and Compose v2 plugin)
+      ansible.builtin.apt:
+        update_cache: yes
+        name:
+          - rsync
+          - curl
+          - docker-compose-plugin
+          - python3-docker
+          - python3-requests
+        state: present
+
+  tasks:
+    - name: Ensure project dir exists
+      ansible.builtin.file:
+        path: "{{ project_dir }}"
+        state: directory
+        mode: "0755"
+
+    # بديل الـ git: نفك الأرتيفاكت اللي الworkflow بعته
+    - name: Extract uploaded artifact
+      ansible.builtin.unarchive:
+        src: "{{ artifact }}"
+        dest: "{{ project_dir }}"
+        remote_src: yes
+        # لو حابب تنظف الملفات القديمة قبل الفك:
+        # extra_opts: [ "--overwrite" ]
+
+    - name: Ensure external Docker networks exist
+      community.docker.docker_network:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - rashaka-app
+        - web
+
+    - name: Build local image laravel-app:latest (cache bust with BUILD_ID)
+      community.docker.docker_image:
+        name: laravel-app
+        tag: latest
+        source: build
+        force_source: true 
+        build:
+          path: "{{ project_dir }}"
+          pull: yes
+          nocache: true
+          args:
+            BUILD_ID: "{{ build_id }}"
+      register: build_result
+
+    # تأكد docker-compose.yml فيه image: "laravel-app:latest"
+    - name: Restart stack with the new image
+      community.docker.docker_compose_v2:
+        project_src: "{{ project_dir }}"
+        pull: never
+        recreate: always
+        remove_orphans: true
+        state: present
+      register: compose_result
+
+    - name: (Optional) Wait for HTTP to be up
+      ansible.builtin.uri:
+        url: http://localhost:8080/
+        status_code: 200
+        validate_certs: no
+      register: web
+      retries: 30
+      delay: 2
+      until: web.status == 200
+
+    - name: Clean dangling images
+      ansible.builtin.command: docker image prune -f
+      changed_when: true
