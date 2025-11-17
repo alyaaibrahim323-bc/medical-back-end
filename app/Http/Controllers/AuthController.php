@@ -24,7 +24,6 @@ class AuthController extends Controller
             'name'     => ['required','string','max:120'],
             'email'    => ['required','email','unique:users,email'],
             'password' => ['required', Pw::min(8)],
-            'phone'    => ['nullable','string','max:30'],
             'preferred_locale' => ['nullable','in:en,ar'],
         ]);
 
@@ -40,7 +39,7 @@ class AuthController extends Controller
         $u->assignRole('user');
 
         // Generate + store OTP
-        $otp = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $otp = str_pad((string)random_int(0, 999999), 4, '0', STR_PAD_LEFT);
         $expiresMinutes = (int) config('auth.otp_expires', (int)env('AUTH_OTP_EXPIRES', 10));
 
         EmailOtp::updateOrCreate(
