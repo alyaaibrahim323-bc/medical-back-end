@@ -35,6 +35,7 @@ class AuthController extends Controller
             'status'=>'active',
             'preferred_locale' => $data['preferred_locale'] ?? 'en',
         ]);
+
         $u->assignRole('user');
 
         // Generate + store OTP
@@ -120,8 +121,8 @@ class AuthController extends Controller
     public function verifyEmailOtp(Request $r)
     {
         $data = $r->validate([
-            'code'  => ['required','digits:4'],
             'email' => ['required','email','exists:users,email'],
+            'code'  => ['required','digits:4'],
         ]);
 
         $u = User::where('email', $data['email'])->firstOrFail();
@@ -193,48 +194,49 @@ class AuthController extends Controller
 
     public function sendResetLink(Request $r)
     {
-        $data = $r->validate(['email'=>['required','email','exists:users,email']]);
+        $data = $r->validate([
+            'email'=>['required','email','exists:users,email']
+        ]);
+
         $st = Password::sendResetLink(['email'=>$data['email']]);
+
         return $st === Password::RESET_LINK_SENT
             ? response()->json(['message'=>__($st)])
             : response()->json(['message'=>__($st)], 422);
     }
 
-      public function resetPassword(Request $r)
-{
-    $data = $r->validate([
-        'email' => ['required','email','exists:users,email'],
-        'token' => ['required','string'],
-        'password' => ['required','string','min:8','confirmed'],
-    ]);
+    public function resetPassword(Request $r)
+    {
+        $data = $r->validate([
+            'email'    => ['required','email','exists:users,email'],
+            'token'    => ['required','string'],
+            'password' => ['required','string','min:8','confirmed'],
+        ]);
 
-    $status = Password::reset($data, function (User $user, string $password) {
-        // Update password
-        $user->forceFill([
-            'password' => Hash::make($password),
-            'remember_token' => Str::random(60),
-        ])->save();
+        $status = Password::reset($data, function (User $user, string $password) {
+            // Update password
+            $user->forceFill([
+                'password'       => Hash::make($password),
+                'remember_token' => Str::random(60),
+            ])->save();
 
-        event(new PasswordReset($user));
-    });
+            event(new PasswordReset($user));
+        });
 
-    if ($status !== Password::PASSWORD_RESET) {
+        if ($status !== Password::PASSWORD_RESET) {
+            return response()->json([
+                'message' => __($status)
+            ], 422);
+        }
+
+        // ****** Generate New Token After Reset ******
+        $user = User::where('email', $data['email'])->first();
+        $token = $user->createToken('api')->plainTextToken;
+
         return response()->json([
-            'message' => __($status)
-        ], 422);
+            'message' => __($status),
+            'email'   => $user->email,
+            'token'   => $token,
+        ]);
     }
-
-    // ****** Generate New Token After Reset ******
-    $user = User::where('email', $data['email'])->first();
-    $token = $user->createToken('api')->plainTextToken;
-
-    return response()->json([
-        'message' => __($status),
-        'email'   => $user->email,
-        'token'   => $token,
-
-    ]);
-}
-
-
 }
