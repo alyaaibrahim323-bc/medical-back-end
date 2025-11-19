@@ -121,7 +121,6 @@ class AuthController extends Controller
     public function verifyEmailOtp(Request $r)
     {
         $data = $r->validate([
-            'email' => ['required','email','exists:users,email'],
             'code'  => ['required','digits:4'],
         ]);
 
