@@ -122,6 +122,7 @@ class AuthController extends Controller
     {
         $data = $r->validate([
             'code'  => ['required','digits:4'],
+            'email' => ['required','email','exists:users,email'],
         ]);
 
         $u = User::where('email', $data['email'])->firstOrFail();
