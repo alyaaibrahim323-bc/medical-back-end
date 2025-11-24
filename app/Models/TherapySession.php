@@ -27,10 +27,13 @@ class TherapySession extends Model
     public function payment(){ return $this->hasOne(Payment::class, 'therapy_session_id'); }
     public function userPackage(){ return $this->belongsTo(UserPackage::class); }
 
-    public function scopeForDoctor($q, int $therapistId) {
-  return $q->where('therapist_id', $therapistId);
-}
-public function scopeUpcoming($q) { return $q->where('scheduled_at','>=', now()); }
-public function scopePast($q) { return $q->where('scheduled_at','<', now()); }
+    public function scopeForDoctor($q, int $therapistId) {return $q->where('therapist_id', $therapistId);}
+    public function scopeUpcoming($q) { return $q->where('scheduled_at','>=', now()); }
+    public function scopePast($q) { return $q->where('scheduled_at','<', now()); }
+    public function chat()
+    {
+        return $this->hasOne(Chat::class);
+    }
+
 
 }

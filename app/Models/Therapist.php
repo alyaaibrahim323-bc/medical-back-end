@@ -9,7 +9,7 @@ class Therapist extends Model
 {
     protected $fillable = [
         'user_id','specialty','bio','price_cents','currency',
-        'rating_avg','rating_count','is_active'
+        'rating_avg','rating_count','is_active','is_chat_online','last_online_at','avatar'
     ];
 
     protected $casts = [
@@ -17,6 +17,8 @@ class Therapist extends Model
         'bio'       => 'array',
         'is_active' => 'boolean',
         'rating_avg'=> 'float',
+        'is_chat_online' => 'boolean',
+        'last_online_at' => 'datetime',
     ];
 
 public function user()
