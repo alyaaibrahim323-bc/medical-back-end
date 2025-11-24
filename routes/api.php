@@ -10,6 +10,8 @@ use App\Http\Controllers\Admin\AdminSessionsReportController;
 use App\Http\Controllers\Admin\AdminSubscriptionsReportController;
 use App\Http\Controllers\Admin\BannerController as AdminBanner;
 use App\Http\Controllers\Admin\QuoteController as AdminQuote;
+use App\Http\Controllers\Admin\AdminChatController;
+
 
 
 // Doctor
@@ -20,6 +22,8 @@ use App\Http\Controllers\Doctor\DoctorSessionsController;
 use App\Http\Controllers\Doctor\DoctorClientsController;
 use App\Http\Controllers\Doctor\ProfileController;
 use App\Http\Controllers\Doctor\SingleSessionManageController;
+use App\Http\Controllers\Doctor\DoctorChatController;
+
 // Public
 use App\Http\Controllers\Public\TherapistController as PublicTherapist;
 use App\Http\Controllers\Public\PaymentsController;
@@ -28,8 +32,10 @@ use App\Http\Controllers\Public\homeController;
 use App\Http\Controllers\TherapySessionController;
 use App\Http\Controllers\PackageCheckoutController;
 use App\Http\Controllers\MePackagesController;
-use App\Http\Controllers\PaymentWebhookController;
-use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\UserChatController;
+use App\Http\Controllers\ChatMessageController;
+use App\Http\Controllers\ProfileController as UserProfileController;
+
 
 
 
@@ -88,6 +94,15 @@ Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(functio
     Route::put('/quotes/{id}',   [AdminQuote::class, 'update']);
     Route::delete('/quotes/{id}',[AdminQuote::class, 'destroy']);
 });
+Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
+    Route::get('chats', [AdminChatController::class, 'index']);
+    Route::post('chats/{chat}/assign', [AdminChatController::class, 'assign']);
+    Route::post('chats/{chat}/close',  [AdminChatController::class, 'close']);
+
+    // ولو حابة admin يبعت مسدجات من الداشبورد:
+    Route::get('chats/{chat}/messages', [ChatMessageController::class, 'index']);
+    Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
+});
 
 // ===== Doctor (requires role:doctor) =====
 Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(function () {
@@ -137,6 +152,14 @@ Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(funct
     Route::patch ('/single-session',         [SingleSessionManageController::class, 'update']);
     Route::post  ('/single-session/disable', [SingleSessionManageController::class, 'deactivate']);
 });
+ Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(function () {
+    Route::get('chats', [DoctorChatController::class, 'index']);
+    Route::get('chats/{chat}', [DoctorChatController::class, 'show']);
+
+    Route::get('chats/{chat}/messages', [ChatMessageController::class, 'index']);
+    Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
+    Route::post('chats/{chat}/read',     [ChatMessageController::class, 'read']);
+});
 
 // ===== Public =====
 Route::get('/home/banners', [homeController::class, 'homebanner']);
@@ -159,6 +182,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/me/packages',              [MePackagesController::class, 'index']);
     Route::get('/me/packages/{id}',         [MePackagesController::class, 'show']);
 });
+Route::middleware(['auth:sanctum','role:user'])->prefix('me')->group(function () {
+    Route::get('/profile',           [UserProfileController::class, 'show']);
+    Route::patch('/profile',         [UserProfileController::class, 'update']);
+    Route::patch('/profile/password',[UserProfileController::class, 'updatePassword']);
+});
 // Webhook من Paymob (من غير auth)
 Route::post('/payments/paymob/webhook', [PaymentsController::class, 'webhook']);
 
@@ -169,6 +197,19 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Fake success للـ local testing
     Route::post('/payments/{payment}/fake-success', [PaymentsController::class, 'fakeSuccess']);
 });
+Route::middleware('auth:sanctum')->group(function () {
+
+    // فتح / الحصول على شات الـ support
+    Route::post('chats/open-support', [UserChatController::class, 'openSupportChat']);
+
+    Route::get('chats', [UserChatController::class, 'index']);
+    Route::get('chats/{chat}', [UserChatController::class, 'show']);
+
+    Route::get('chats/{chat}/messages', [ChatMessageController::class, 'index']);
+    Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
+    Route::post('chats/{chat}/read',     [ChatMessageController::class, 'read']);
+});
+
 
 Route::get('/user', function (Request $request) {
     return $request->user();

@@ -5,6 +5,9 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use App\Models\User;
 use App\Observers\UserObserver;
+use App\Models\TherapySession;
+use App\Observers\TherapySessionObserver;
+
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -23,5 +26,7 @@ class AppServiceProvider extends ServiceProvider
     {
 
         User::observe(UserObserver::class);
+        TherapySession::observe(TherapySessionObserver::class);
+
     }
 }
