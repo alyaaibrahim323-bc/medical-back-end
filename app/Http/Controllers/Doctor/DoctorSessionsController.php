@@ -9,6 +9,8 @@ use Throwable;
 use Illuminate\Support\Facades\DB;
 use App\Models\TherapySession;
 use Illuminate\Http\Request;
+use App\Services\NotificationService;
+
 
 class DoctorSessionsController extends Controller
 {
@@ -50,6 +52,16 @@ class DoctorSessionsController extends Controller
         ]);
 
         $s->update(['status'=>$data['status']]);
+        if ($newStatus === TherapySession::STATUS_COMPLETED) {
+    app(NotificationService::class)->sendToUser(
+        $session->user_id,
+        'session_rating',
+        [
+            'doctor' => $session->therapist->user->name,
+            'session_id' => $session->id,
+        ]
+    );
+}
         return response()->json(['data'=>$s->refresh()]);
     }
 

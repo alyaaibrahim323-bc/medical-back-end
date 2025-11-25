@@ -11,8 +11,7 @@ use App\Http\Controllers\Admin\AdminSubscriptionsReportController;
 use App\Http\Controllers\Admin\BannerController as AdminBanner;
 use App\Http\Controllers\Admin\QuoteController as AdminQuote;
 use App\Http\Controllers\Admin\AdminChatController;
-
-
+use App\Http\Controllers\Admin\AdminNotificationController;
 
 // Doctor
 use App\Http\Controllers\Doctor\ScheduleController;
@@ -34,7 +33,9 @@ use App\Http\Controllers\PackageCheckoutController;
 use App\Http\Controllers\MePackagesController;
 use App\Http\Controllers\UserChatController;
 use App\Http\Controllers\ChatMessageController;
-use App\Http\Controllers\ProfileController as UserProfileController;
+use App\Http\Controllers\UserProfileController;
+use App\Http\ControllerS\UserNotificationController;
+use App\Http\Controllers\UserNotificationSettingController;
 
 
 
@@ -103,6 +104,15 @@ Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(functio
     Route::get('chats/{chat}/messages', [ChatMessageController::class, 'index']);
     Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
 });
+Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
+
+      Route::get('/notifications',        [AdminNotificationController::class, 'index']);
+        Route::get('/notifications/{id}',   [AdminNotificationController::class, 'show']);
+        Route::post('/notifications',       [AdminNotificationController::class, 'store']);   // create + send / schedule
+        Route::patch('/notifications/{id}', [AdminNotificationController::class, 'update']);  // edit scheduled
+        Route::delete('/notifications/{id}',[AdminNotificationController::class, 'destroy']);
+});
+
 
 // ===== Doctor (requires role:doctor) =====
 Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(function () {
@@ -187,6 +197,7 @@ Route::middleware(['auth:sanctum','role:user'])->prefix('me')->group(function ()
     Route::patch('/profile',         [UserProfileController::class, 'update']);
     Route::patch('/profile/password',[UserProfileController::class, 'updatePassword']);
 });
+
 // Webhook من Paymob (من غير auth)
 Route::post('/payments/paymob/webhook', [PaymentsController::class, 'webhook']);
 
@@ -209,6 +220,23 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
     Route::post('chats/{chat}/read',     [ChatMessageController::class, 'read']);
 });
+
+Route::middleware(['auth:sanctum'])->group(function () {
+
+        // قائمة النوتيفيكيشن للموبايل
+        Route::get('/notifications', [UserNotificationController::class, 'index']);
+
+        // Mark as read لواحدة
+        Route::patch('/notifications/{notification}/read', [UserNotificationController::class, 'markAsRead']);
+
+        // (اختياري) Mark all as read
+        Route::patch('/notifications/read-all', [UserNotificationController::class, 'markAllAsRead']);
+
+
+        // Notification Settings screen
+        Route::get('/notification-settings', [UserNotificationSettingController::class, 'show']);
+        Route::patch('/notification-settings', [UserNotificationSettingController::class, 'update']);
+    });
 
 
 Route::get('/user', function (Request $request) {

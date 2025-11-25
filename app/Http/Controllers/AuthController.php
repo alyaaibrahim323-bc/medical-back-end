@@ -33,7 +33,6 @@ class AuthController extends Controller
             'password'=> Hash::make($data['password']),
             'role' => 'user',
             'status'=>'active',
-            'phone' => $data['phone'] ?? null,
             'preferred_locale' => $data['preferred_locale'] ?? 'en',
         ]);
         $u->assignRole('user');
