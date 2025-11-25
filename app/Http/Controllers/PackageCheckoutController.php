@@ -39,6 +39,8 @@ class PackageCheckoutController extends Controller
             $payable,
             $serviceFee,
             $total,
+            $basePrice,
+            $discount,
             &$userPackage,
             &$payment
         ) {
