@@ -12,9 +12,21 @@ class UserPackage extends Model
     ];
     protected $casts = ['purchased_at'=>'datetime','expires_at'=>'datetime'];
 
+    protected $appends = [
+        'can_renew',
+    ];
+
     public function user(){ return $this->belongsTo(User::class); }
     public function package(){ return $this->belongsTo(Package::class); }
     public function therapist(){ return $this->belongsTo(Therapist::class); }
     public function payment(){ return $this->belongsTo(Payment::class); }
     public function redemptions(){ return $this->hasMany(PackageRedemption::class); }
+
+    public function getCanRenewAttribute(): bool
+    {
+        $noSessionsLeft = $this->sessions_used >= $this->sessions_total;
+        $isExpired      = $this->expires_at && $this->expires_at->isPast();
+
+        return $noSessionsLeft || $isExpired || $this->status === 'completed';
+    }
 }

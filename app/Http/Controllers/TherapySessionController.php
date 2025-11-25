@@ -10,6 +10,7 @@ use App\Models\PackageRedemption;
 use App\Models\Payment;
 use App\Models\SingleSessionOffer;
 use App\Services\TherapistAvailabilityService;
+use App\Services\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +19,7 @@ use Illuminate\Support\Str;
 class TherapySessionController extends Controller
 {
     /**
-     * قائمة جلسات اليوزر (upcoming / past)
+     * قائمة جلسات اليوزر (upcoming / past / all)
      */
     public function index(Request $r)
     {
@@ -33,10 +34,10 @@ class TherapySessionController extends Controller
 
         if ($scope === 'upcoming') {
             $q->where('scheduled_at', '>=', now())
-              ->whereIn('status', [
-                  TherapySession::STATUS_PENDING,
-                  TherapySession::STATUS_CONFIRMED,
-              ]);
+                ->whereIn('status', [
+                    TherapySession::STATUS_PENDING,
+                    TherapySession::STATUS_CONFIRMED,
+                ]);
         } elseif ($scope === 'past') {
             $q->where('scheduled_at', '<', now());
         }
@@ -60,8 +61,8 @@ class TherapySessionController extends Controller
 
     /**
      * إنشاء جلسة:
-     * - billing_type = single  → حجز جلسة + Payment
-     * - billing_type = package → حجز جلسة من رصيد الباكدج
+     * - billing_type = single  → حجز جلسة + Payment (pending)
+     * - billing_type = package → حجز جلسة من رصيد الباكدج (confirmed)
      */
     public function store(Request $r, TherapistAvailabilityService $availability)
     {
@@ -90,7 +91,7 @@ class TherapySessionController extends Controller
         }
 
         if ($data['billing_type'] === 'single') {
-            // 🟢 حجز single session + Payment
+            // 🟢 حجز single session + Payment (الReminder الأحسن يبقى بعد نجاح الدفع من webhook)
             return $this->createSingleSessionWithPayment(
                 user: $user,
                 therapist: $therapist,
@@ -99,7 +100,7 @@ class TherapySessionController extends Controller
             );
         }
 
-        // 🟣 حجز جلسة من Package
+        // 🟣 حجز جلسة من Package (confirmed + notification)
         return $this->createSessionFromPackage(
             user: $user,
             therapist: $therapist,
@@ -118,11 +119,11 @@ class TherapySessionController extends Controller
 
         $s = TherapySession::where('user_id', $user->id)->findOrFail($id);
 
-        // ممكن تضيفي validation زيادة (مثلاً لا يلغى جلسة ماضية، أو قبل X ساعات)
+        // validation إضافية
         if (in_array($s->status, [
             TherapySession::STATUS_COMPLETED,
             TherapySession::STATUS_NO_SHOW,
-        ])) {
+        ], true)) {
             return response()->json(['message' => 'Cannot cancel this session'], 422);
         }
 
@@ -139,11 +140,6 @@ class TherapySessionController extends Controller
 
     /**
      * حجز single session + إنشاء Payment pending
-     *
-     * هنا بنحافظ على نفس الـ structure اللى يناسب شاشة الدفع:
-     *  - session_fee_cents
-     *  - service_fee_cents
-     *  - amount_cents (total)
      */
     protected function createSingleSessionWithPayment($user, Therapist $therapist, Carbon $scheduledAt, int $durationMin)
     {
@@ -181,7 +177,7 @@ class TherapySessionController extends Controller
             &$session,
             &$payment
         ) {
-            // 1) إنشاء الجلسة بحالة pending_payment
+            // 1) إنشاء الجلسة بحالة pending
             $session = TherapySession::create([
                 'user_id'      => $user->id,
                 'therapist_id' => $therapist->id,
@@ -193,36 +189,39 @@ class TherapySessionController extends Controller
 
             // 2) إنشاء Payment
             $payment = Payment::create([
-                'user_id'           => $user->id,
-                'therapist_id'      => $therapist->id,
-                'therapy_session_id'=> $session->id,
-                'user_package_id'   => null,
-                'purpose'           => 'single_session',
-                'amount_cents'      => $total,
-                'currency'          => $currency,
-                'provider'          => 'paymob',
-                'status'            => 'pending',
-                'reference'         => 'SS-'.Str::uuid(),
-                'payload'           => [
-                    'session_fee_cents'   => $sessionFee,
-                    'service_fee_cents'   => $serviceFee,
-                    'duration_min'        => $durationMin,
-                    'therapist_id'        => $therapist->id,
-                    'user_id'             => $user->id,
+                'user_id'            => $user->id,
+                'therapist_id'       => $therapist->id,
+                'therapy_session_id' => $session->id,
+                'user_package_id'    => null,
+                'purpose'            => 'single_session',
+                'amount_cents'       => $total,
+                'currency'           => $currency,
+                'provider'           => 'paymob',
+                'status'             => 'pending',
+                'reference'          => 'SS-' . Str::uuid(),
+                'payload'            => [
+                    'session_fee_cents' => $sessionFee,
+                    'service_fee_cents' => $serviceFee,
+                    'duration_min'      => $durationMin,
+                    'therapist_id'      => $therapist->id,
+                    'user_id'           => $user->id,
                 ],
             ]);
         });
+
+        /** @var \App\Models\TherapySession $session */
+        /** @var \App\Models\Payment $payment */
 
         return response()->json([
             'data' => [
                 'session' => $session->load('therapist.user'),
                 'payment' => [
-                    'id'                 => $payment->id,
-                    'amount_cents'       => $payment->amount_cents,
-                    'currency'           => $payment->currency,
-                    'session_fee_cents'  => $sessionFee,
-                    'service_fee_cents'  => $serviceFee,
-                    'reference'          => $payment->reference,
+                    'id'                => $payment->id,
+                    'amount_cents'      => $payment->amount_cents,
+                    'currency'          => $payment->currency,
+                    'session_fee_cents' => $sessionFee,
+                    'service_fee_cents' => $serviceFee,
+                    'reference'         => $payment->reference,
                 ],
                 'billing_source' => 'single',
             ]
@@ -231,6 +230,7 @@ class TherapySessionController extends Controller
 
     /**
      * حجز جلسة من Package (بدون دفع، من رصيد الباكدج)
+     * + إرسال Notification "جلسة قادمة"
      */
     protected function createSessionFromPackage(
         $user,
@@ -267,8 +267,14 @@ class TherapySessionController extends Controller
 
         $session = null;
 
-        DB::transaction(function () use ($user, $therapist, $scheduledAt, $durationMin, $userPackage, &$session) {
-
+        DB::transaction(function () use (
+            $user,
+            $therapist,
+            $scheduledAt,
+            $durationMin,
+            $userPackage,
+            &$session
+            ) {
             // 1) نخلق Session بحالة confirmed + billing_type=package
             $session = TherapySession::create([
                 'user_id'        => $user->id,
@@ -292,11 +298,23 @@ class TherapySessionController extends Controller
             $userPackage->sessions_used += 1;
 
             if ($userPackage->sessions_used >= $userPackage->sessions_total) {
-                $userPackage->status = 'completed'; // أو exhausted حسب ما مسمياه فى الجدول
+                $userPackage->status = 'completed'; // أو exhausted
             }
 
             $userPackage->save();
         });
+
+        /** @var \App\Models\TherapySession $session */
+
+        // 🔔 Notification "موعد الجلسة" (auto، عربي/إنجليزي من NotificationResource)
+        app(NotificationService::class)->sendToUser(
+            $session->user_id,
+            'session_upcoming',
+            [
+                'doctor' => $session->therapist->user->name,
+                'time'   => $session->scheduled_at->format('g:i A'),
+            ]
+        );
 
         return response()->json([
             'data' => [
@@ -335,7 +353,7 @@ class TherapySessionController extends Controller
         }
 
         // fallback: لو عندك عمود فى therapists اسمه default_session_duration_min
-        if (!empty($therapist->default_session_duration_min)) {
+        if (! empty($therapist->default_session_duration_min)) {
             return (int) $therapist->default_session_duration_min;
         }
 

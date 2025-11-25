@@ -11,6 +11,9 @@ use App\Services\PaymobService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Services\NotificationService;
+
+
 
 class PaymentsController extends Controller
 {
@@ -239,54 +242,137 @@ class PaymentsController extends Controller
      * - لو package → ننشئ UserPackage (لو لسه) أو نحدّث الموجود
      */
     protected function applyBusinessLogicAfterPayment(Payment $payment): void
-    {
-        // Single session
-        if ($payment->purpose === Payment::PURPOSE_SINGLE_SESSION && $payment->therapy_session_id) {
-            $session = TherapySession::find($payment->therapy_session_id);
-            if ($session && $payment->status === Payment::STATUS_PAID) {
-                $session->update([
-                    'status' => TherapySession::STATUS_CONFIRMED,
-                ]);
-            }
+{
+    /** @var NotificationService $notifications */
+    $notifications = app(NotificationService::class);
+
+    // =========================
+    // 1) Single Session Payment
+    // =========================
+    if ($payment->purpose === Payment::PURPOSE_SINGLE_SESSION && $payment->therapy_session_id) {
+        $session = TherapySession::with('therapist.user')->find($payment->therapy_session_id);
+
+        // لو الدفع نجح
+        if ($session && $payment->status === Payment::STATUS_PAID) {
+            // نأكد الجلسة
+            $session->update([
+                'status' => TherapySession::STATUS_CONFIRMED,
+            ]);
+
+            // 🔔 إشعار نجاح الدفع
+            $notifications->sendToUser(
+                $payment->user_id,
+                'payment_success',
+                [
+                    'amount' => $payment->amount_cents / 100,
+                    'item'   => 'Single session with ' . ($session->therapist->user->name ?? 'therapist'),
+                ]
+            );
+
+            // 🔔 إشعار موعد الجلسة
+            $notifications->sendToUser(
+                $payment->user_id,
+                'session_upcoming',
+                [
+                    'doctor' => $session->therapist->user->name ?? 'therapist',
+                    'time'   => $session->scheduled_at->format('g:i A'),
+                ]
+            );
+        }
+
+        // لو الدفع فشل
+        if ($session && $payment->status === Payment::STATUS_FAILED) {
+            $notifications->sendToUser(
+                $payment->user_id,
+                'payment_failed',
+                [
+                    'amount' => $payment->amount_cents / 100,
+                    'item'   => 'Single session',
+                ]
+            );
+        }
+
+        return;
+    }
+
+    // =========================
+    // 2) Package Payment
+    // =========================
+    if ($payment->purpose === Payment::PURPOSE_PACKAGE) {
+
+        // لو الدفع فشل: بس إشعار فشل
+        if ($payment->status === Payment::STATUS_FAILED) {
+            $notifications->sendToUser(
+                $payment->user_id,
+                'payment_failed',
+                [
+                    'amount' => $payment->amount_cents / 100,
+                    'item'   => 'Package',
+                ]
+            );
             return;
         }
 
-        // Package
-        if ($payment->purpose === Payment::PURPOSE_PACKAGE && $payment->status === Payment::STATUS_PAID) {
-
-            // لو كان عندك بالفعل user_package_id على الـ payment سيبيه زى ما هو
-            if ($payment->user_package_id) {
-                return;
-            }
-
-            $payData   = $payment->payload ?? [];
-            $packageId = $payData['package_id'] ?? null;
-
-            if (!$packageId) {
-                return;
-            }
-
-            /** @var Package|null $package */
-            $package = Package::find($packageId);
-            if (!$package) return;
-
-            $sessionsCount = $package->sessions_count;
-            $validityDays  = $package->validity_days;
-
-            $userPackage = UserPackage::create([
-                'user_id'        => $payment->user_id,
-                'package_id'     => $package->id,
-                'therapist_id'   => $payment->therapist_id,
-                'sessions_total' => $sessionsCount,
-                'sessions_used'  => 0,
-                'status'         => 'active',
-                'purchased_at'   => now(),
-                'expires_at'     => $validityDays ? now()->addDays($validityDays) : null,
-            ]);
-
-            $payment->update([
-                'user_package_id' => $userPackage->id,
-            ]);
+        // لو مش PAID → متعمليش حاجة
+        if ($payment->status !== Payment::STATUS_PAID) {
+            return;
         }
+
+        // لو عندك user_package_id موجود بالفعل
+        if ($payment->user_package_id) {
+            // 🔔 إشعار نجاح الدفع (الباكيدچ موجودة خلاص)
+            $notifications->sendToUser(
+                $payment->user_id,
+                'payment_success',
+                [
+                    'amount' => $payment->amount_cents / 100,
+                    'item'   => 'Package',
+                ]
+            );
+            return;
+        }
+
+        // نكمّل اللوجيك القديم لإنشاء UserPackage
+        $payData   = $payment->payload ?? [];
+        $packageId = $payData['package_id'] ?? null;
+
+        if (!$packageId) {
+            return;
+        }
+
+        /** @var Package|null $package */
+        $package = Package::find($packageId);
+        if (!$package) {
+            return;
+        }
+
+        $sessionsCount = $package->sessions_count;
+        $validityDays  = $package->validity_days;
+
+        $userPackage = UserPackage::create([
+            'user_id'        => $payment->user_id,
+            'package_id'     => $package->id,
+            'therapist_id'   => $payment->therapist_id,
+            'sessions_total' => $sessionsCount,
+            'sessions_used'  => 0,
+            'status'         => 'active',
+            'purchased_at'   => now(),
+            'expires_at'     => $validityDays ? now()->addDays($validityDays) : null,
+        ]);
+
+        $payment->update([
+            'user_package_id' => $userPackage->id,
+        ]);
+
+        // 🔔 إشعار نجاح شراء الباكيدچ
+        $notifications->sendToUser(
+            $payment->user_id,
+            'payment_success',
+            [
+                'amount' => $payment->amount_cents / 100,
+                'item'   => 'Package ' . ($package->name ?? ''),
+            ]
+        );
     }
+}
 }

@@ -2,12 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 
-class ProfileController extends Controller
+class UserProfileController extends Controller
 {
     /**
      * رجوع بيانات اليوزر الحالي (profile screen).
@@ -51,7 +50,7 @@ class ProfileController extends Controller
     }
 
     /**
-     * تغيير الباسورد (نفس منطق الدكتور).
+     * تغيير الباسورد.
      */
     public function updatePassword(Request $r)
     {

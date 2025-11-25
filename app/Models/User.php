@@ -33,6 +33,18 @@ public function therapist()
     return $this->hasOne(\App\Models\Therapist::class, 'user_id');
 }
 
+public function notifications()
+{
+    return $this->belongsToMany(Notification::class, 'notification_deliveries')
+        ->withPivot(['delivered_at','read_at'])
+        ->withTimestamps();
+}
+
+public function notificationSettings()
+{
+    return $this->hasOne(NotificationSetting::class);
+}
+
 
 
 }
