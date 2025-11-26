@@ -192,18 +192,26 @@ class AuthController extends Controller
 
     // ========= Forgot / Reset (LINK to app) =========
 
-    public function sendResetLink(Request $r)
-    {
-        $data = $r->validate([
-            'email'=>['required','email','exists:users,email']
-        ]);
+   public function sendResetLink(Request $r)
+{
+    $data = $r->validate([
+        'email' => ['required', 'email', 'exists:users,email'],
+    ]);
 
-        $st = Password::sendResetLink(['email'=>$data['email']]);
+    // جيبي اليوزر
+    $user = User::where('email', $data['email'])->firstOrFail();
 
-        return $st === Password::RESET_LINK_SENT
-            ? response()->json(['message'=>__($st)])
-            : response()->json(['message'=>__($st)], 422);
-    }
+    // اعملي reset token باستخدام الـ Facade
+    $token = Password::createToken($user);
+
+    return response()->json([
+        'message' => 'Reset token generated successfully',
+        'email'   => $user->email,
+        'token'   => $token,
+    ]);
+}
+
+
 
     public function resetPassword(Request $r)
     {
