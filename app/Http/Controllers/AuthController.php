@@ -200,26 +200,42 @@ class AuthController extends Controller
             : response()->json(['message'=>__($st)], 422);
     }
 
-    public function resetPassword(Request $r)
-    {
-        $data = $r->validate([
-            'email' => ['required','email','exists:users,email'],
-            'token' => ['required','string'],
-            'password' => ['required','string','min:8','confirmed'],
-        ]);
+   public function resetPassword(Request $r)
+{
+    $data = $r->validate([
+        'email' => ['required','email','exists:users,email'],
+        'token' => ['required','string'],
+        'password' => ['required','string','min:8','confirmed'],
+    ]);
 
-        $st = Password::reset($data, function (User $u, string $password) {
-            $u->forceFill([
-                'password' => Hash::make($password),
-                'remember_token' => Str::random(60),
-            ])->save();
-            event(new PasswordReset($u));
-        });
+    $status = Password::reset($data, function (User $user, string $password) {
+        // Update password
+        $user->forceFill([
+            'password' => Hash::make($password),
+            'remember_token' => Str::random(60),
+        ])->save();
 
-        return $st === Password::PASSWORD_RESET
-            ? response()->json(['message'=>__($st)])
-            : response()->json(['message'=>__($st)], 422);
+        event(new PasswordReset($user));
+    });
+
+    if ($status !== Password::PASSWORD_RESET) {
+        return response()->json([
+            'message' => __($status)
+        ], 422);
     }
+
+    // ****** Generate New Token After Reset ******
+    $user = User::where('email', $data['email'])->first();
+    $token = $user->createToken('api')->plainTextToken;
+
+    return response()->json([
+        'message' => __($status),
+        'email'   => $user->email,
+        'token'   => $token,
+
+    ]);
+}
+
 
 
 }
