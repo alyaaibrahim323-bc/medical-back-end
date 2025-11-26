@@ -2,7 +2,10 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Broadcast;
+
 use App\Http\Controllers\AuthController;
+
 //Admin
 use App\Http\Controllers\Admin\TherapistController as AdminTherapist;
 use App\Http\Controllers\Admin\AdminPackagesReportController;
@@ -269,4 +272,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 Route::get('/user', function (Request $request) {
     return $request->user();
+})->middleware('auth:sanctum');
+Route::post('/broadcasting/auth', function (Request $request) {
+    return Broadcast::auth($request);
 })->middleware('auth:sanctum');
