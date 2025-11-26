@@ -200,7 +200,7 @@ class AuthController extends Controller
             : response()->json(['message'=>__($st)], 422);
     }
 
-   public function resetPassword(Request $r)
+      public function resetPassword(Request $r)
 {
     $data = $r->validate([
         'email' => ['required','email','exists:users,email'],
@@ -235,7 +235,6 @@ class AuthController extends Controller
 
     ]);
 }
-
 
 
 }
