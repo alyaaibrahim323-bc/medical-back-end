@@ -12,6 +12,10 @@ use App\Http\Controllers\Admin\BannerController as AdminBanner;
 use App\Http\Controllers\Admin\QuoteController as AdminQuote;
 use App\Http\Controllers\Admin\AdminChatController;
 use App\Http\Controllers\Admin\AdminNotificationController;
+use App\Http\Controllers\Admin\AdminDashboardController;
+use App\Http\Controllers\Admin\AdminSettingsController;
+
+
 
 // Doctor
 use App\Http\Controllers\Doctor\ScheduleController;
@@ -34,7 +38,7 @@ use App\Http\Controllers\MePackagesController;
 use App\Http\Controllers\UserChatController;
 use App\Http\Controllers\ChatMessageController;
 use App\Http\Controllers\UserProfileController;
-use App\Http\ControllerS\UserNotificationController;
+use App\Http\Controllers\UserNotificationController;
 use App\Http\Controllers\UserNotificationSettingController;
 
 
@@ -67,6 +71,12 @@ Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(functio
     Route::patch('/therapists/{id}', [AdminTherapist::class, 'update']);
     Route::delete('/therapists/{id}',[AdminTherapist::class, 'destroy']);
     Route::patch('/therapists/{id}/activate', [AdminTherapist::class, 'activate']);
+    // === NEW: Availability & Timeoffs ===
+    Route::get('/therapists/{id}/schedules', [AdminTherapist::class, 'schedules']);
+    Route::get('/therapists/{id}/timeoffs',  [AdminTherapist::class, 'timeoffs']);
+
+    // === NEW: Performance & Sessions tab ===
+    Route::get('/therapists/{id}/sessions',  [AdminTherapist::class, 'sessions']);
 });
 Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
   // Packages by doctor + details
@@ -112,8 +122,23 @@ Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(functio
         Route::patch('/notifications/{id}', [AdminNotificationController::class, 'update']);  // edit scheduled
         Route::delete('/notifications/{id}',[AdminNotificationController::class, 'destroy']);
 });
+Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
 
+    Route::get('/dashboard/stats', [AdminDashboardController::class, 'stats']);
 
+    // Dashboard – Recent activity box
+    Route::get('/dashboard/recent-activity', [AdminDashboardController::class, 'recentActivity']);
+
+    // Dashboard – Users graph (This year vs Last year)
+    Route::get('/dashboard/graph/users', [AdminDashboardController::class, 'usersGraph']);
+});
+Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
+
+   Route::get('/me',              [AdminSettingsController::class, 'show']);
+    Route::patch('/me/profile',    [AdminSettingsController::class, 'updateProfile']); // name/email/phone
+    Route::post('/me/avatar',     [AdminSettingsController::class, 'updateAvatar']);  // avatar فقط
+    Route::patch('/me/password',   [AdminSettingsController::class, 'updatePassword']);
+});
 // ===== Doctor (requires role:doctor) =====
 Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(function () {
     // schedules
@@ -180,6 +205,13 @@ Route::get('/therapists/{id}/packages',     [PublicTherapist::class, 'packages']
 Route::get('/therapists/{id}/single-session',[PublicTherapist::class, 'singleSession']);
 Route::get('/therapists/{id}/availability', [PublicTherapist::class, 'availability']);
 
+
+Route::middleware(['auth:sanctum'])->prefix('me')->group(function () {
+    Route::get('/profile',            [UserProfileController::class, 'show']);
+    Route::put('/profile',          [UserProfileController::class, 'update']);
+    Route::patch('/profile/password', [UserProfileController::class, 'updatePassword']);
+});
+
 Route::middleware(['auth:sanctum'])->group(function () {
     // Therapy sessions
     Route::get('/therapy-sessions',         [TherapySessionController::class, 'index']);
@@ -192,11 +224,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/me/packages',              [MePackagesController::class, 'index']);
     Route::get('/me/packages/{id}',         [MePackagesController::class, 'show']);
 });
-Route::middleware(['auth:sanctum','role:user'])->prefix('me')->group(function () {
-    Route::get('/profile',           [UserProfileController::class, 'show']);
-    Route::patch('/profile',         [UserProfileController::class, 'update']);
-    Route::patch('/profile/password',[UserProfileController::class, 'updatePassword']);
-});
+
 
 // Webhook من Paymob (من غير auth)
 Route::post('/payments/paymob/webhook', [PaymentsController::class, 'webhook']);

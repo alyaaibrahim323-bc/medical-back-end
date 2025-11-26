@@ -4,7 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\Rules\Password as PasswordRule;
+USE Illuminate\Support\Facades\Log;
 
 class UserProfileController extends Controller
 {
@@ -23,31 +24,30 @@ class UserProfileController extends Controller
     /**
      * تحديث الاسم / الإيميل / التليفون / الصورة.
      */
-    public function update(Request $r)
-    {
-        $user = $r->user();
+ public function update(Request $r)
+{
+    $user = $r->user();
 
-        $data = $r->validate([
-            'name'   => ['sometimes','string','max:100'],
-            'email'  => ['sometimes','email','max:255'],
-            'phone'  => ['sometimes','string','max:30'],
+    $data = $r->validate([
+        'name'   => ['sometimes','string','max:100'],
+        'email'  => ['sometimes','email','max:255'],
+        'phone'  => ['sometimes','string','max:30'],
+        'avatar' => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
+    ]);
 
-            // ✅ صورة البروفايل
-            'avatar' => ['sometimes','image','mimes:jpg,jpeg,png,webp','max:2048'],
-        ]);
-
-        // لو فيه صورة جديدة
-        if ($r->hasFile('avatar')) {
-            $avatarPath = $r->file('avatar')->store('avatars/users', 'public');
-            $data['avatar'] = $avatarPath;
-        }
-
-        $user->update($data);
-
-        return response()->json([
-            'data' => $user->fresh(),
-        ]);
+    if ($r->hasFile('avatar')) {
+        $avatarPath     = $r->file('avatar')->store('avatars/users', 'public');
+        $data['avatar'] = $avatarPath;
     }
+
+    $user->update($data);
+
+    return response()->json([
+        'data' => $user->fresh(),
+    ]);
+}
+
+
 
     /**
      * تغيير الباسورد.
@@ -60,10 +60,11 @@ class UserProfileController extends Controller
             'current_password' => ['required','current_password:sanctum'],
             'password' => [
                 'required','confirmed',
-                Password::min(8)->mixedCase()->numbers()->symbols()->uncompromised(),
+                PasswordRule::min(8)->mixedCase()->numbers()->symbols()->uncompromised(),
             ],
         ]);
 
+        // الباسورد الجديد مايبقاش نفس القديم
         if (Hash::check($data['password'], $user->password)) {
             return response()->json([
                 'message' => 'New password must be different from current password.',
@@ -74,6 +75,7 @@ class UserProfileController extends Controller
             'password' => Hash::make($data['password']),
         ])->save();
 
+        // نلغي كل التوكنز القديمة (ما عدا الحالي)
         if (method_exists($user, 'tokens')) {
             $currentTokenId = optional($r->user()->currentAccessToken())->id;
 

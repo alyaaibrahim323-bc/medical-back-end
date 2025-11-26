@@ -9,6 +9,11 @@ use App\Models\Therapist;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use App\Models\TherapySession;
+// لو عندك موديلات تانية للأڤيلابيليتي عدّلي الأسماء دول
+use App\Models\TherapistSchedule;
+use App\Models\TherapistTimeoff;
+
 
 class TherapistController extends Controller
 {
@@ -205,4 +210,80 @@ class TherapistController extends Controller
 
         return response()->json(['data' => $t]);
     }
+
+        /**
+     * Availability tab فى شاشة تفاصيل الدكتور:
+     * GET /admin/therapists/{id}/schedules
+     */
+    public function schedules($id)
+    {
+        $therapist = Therapist::findOrFail($id);
+
+        // NOTE: عدّلي اسم الموديل والحقول حسب اللى عندك
+        $rows = TherapistSchedule::where('therapist_id', $therapist->id)
+            ->orderBy('day_of_week')   // لو عندك عمود day_of_week
+            ->orderBy('from_time')     // أو from / to
+            ->get();
+
+        return response()->json([
+            'data' => $rows,
+        ]);
+    }
+
+    /**
+     * Timeoffs tab فى شاشة تفاصيل الدكتور:
+     * GET /admin/therapists/{id}/timeoffs
+     */
+    public function timeoffs($id)
+    {
+        $therapist = Therapist::findOrFail($id);
+
+        // NOTE: عدّلي اسم الموديل لو عندك Timeoff أو TherapistTimeoff
+        $rows = TherapistTimeoff::where('therapist_id', $therapist->id)
+            ->orderByDesc('start_at')
+            ->get();
+
+        return response()->json([
+            'data' => $rows,
+        ]);
+    }
+
+    /**
+     * Performance & Activity tab:
+     * كل الجلسات بتاعة دكتور معين + فلاتر status/scope
+     * GET /admin/therapists/{id}/sessions?status=&scope=&from=&to=
+     */
+    public function sessions(Request $request, $id)
+    {
+        $therapist = Therapist::findOrFail($id);
+
+        $q = TherapySession::with(['user','userPackage.package'])
+            ->where('therapist_id', $therapist->id)
+            ->orderByDesc('scheduled_at');
+
+        // فلتر بالـ status: pending / confirmed / completed / cancelled / no_show
+        if ($request->filled('status')) {
+            $q->where('status', $request->status);
+        }
+
+        // scope = upcoming | past
+        if ($request->query('scope') === 'upcoming') {
+            $q->where('scheduled_at', '>=', now());
+        } elseif ($request->query('scope') === 'past') {
+            $q->where('scheduled_at', '<', now());
+        }
+
+        // فلتر بتاريخ من / إلى (اختيارى)
+        if ($request->filled('from')) {
+            $q->whereDate('scheduled_at', '>=', $request->from);
+        }
+        if ($request->filled('to')) {
+            $q->whereDate('scheduled_at', '<=', $request->to);
+        }
+
+        return response()->json([
+            'data' => $q->paginate(20),
+        ]);
+    }
+
 }

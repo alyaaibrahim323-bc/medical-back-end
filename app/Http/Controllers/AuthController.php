@@ -220,4 +220,6 @@ class AuthController extends Controller
             ? response()->json(['message'=>__($st)])
             : response()->json(['message'=>__($st)], 422);
     }
+
+
 }
