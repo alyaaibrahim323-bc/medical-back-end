@@ -23,31 +23,46 @@ class ProfileController extends Controller
     /**
      * تحديث الاسم / الإيميل / التليفون / الصورة.
      */
-    public function update(Request $r)
-    {
-        $user = $r->user();
+   public function updateProfileInfo(Request $r)
+{
+    $user = $r->user();
 
-        $data = $r->validate([
-            'name'   => ['sometimes','string','max:100'],
-            'email'  => ['sometimes','email','max:255'],
-            'phone'  => ['sometimes','string','max:30'],
+    $data = $r->validate([
+        'name'  => ['sometimes','string','max:100'],
+        'email' => ['sometimes','email','max:255'],
+        'phone' => ['sometimes','string','max:30'],
+    ]);
 
-            // ✅ صورة البروفايل
-            'avatar' => ['sometimes','image','mimes:jpg,jpeg,png,webp','max:2048'],
-        ]);
+    $user->update($data);
 
-        // لو فيه صورة جديدة
-        if ($r->hasFile('avatar')) {
-            $avatarPath = $r->file('avatar')->store('avatars/users', 'public');
-            $data['avatar'] = $avatarPath;
-        }
+    return response()->json([
+        'message' => 'Profile updated.',
+        'data'    => $user->fresh(),
+    ]);
+}
 
-        $user->update($data);
+public function updateAvatar(Request $r)
+{
+    $user = $r->user();
 
-        return response()->json([
-            'data' => $user->fresh(),
-        ]);
-    }
+    $data = $r->validate([
+        'avatar' => ['required','image','mimes:jpg,jpeg,png,webp','max:2048'],
+    ]);
+
+    // رفع الصورة
+    $avatarPath = $r->file('avatar')->store('avatars/users', 'public');
+
+    $user->update([
+        'avatar' => $avatarPath,
+    ]);
+
+    return response()->json([
+        'message' => 'Avatar updated successfully.',
+        'avatar'  => $avatarPath,
+    ]);
+}
+
+
 
     /**
      * تغيير الباسورد (نفس منطق الدكتور).

@@ -46,5 +46,12 @@ public function notificationSettings()
 }
 
 
+public function therapySessions()
+{
+    return $this->hasMany(TherapySession::class, 'user_id');
+}
+
+
+
 
 }

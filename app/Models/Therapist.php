@@ -42,5 +42,13 @@ public function user()
             $arr = $this->bio ?? [];
             return $arr[$loc] ?? $arr['en'] ?? null;
         });
+
     }
+
+    public function sessions()
+{
+    return $this->hasMany(TherapySession::class);
 }
+
+}
+

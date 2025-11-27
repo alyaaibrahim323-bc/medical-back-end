@@ -8,7 +8,6 @@ use App\Http\Controllers\AuthController;
 
 //Admin
 use App\Http\Controllers\Admin\TherapistController as AdminTherapist;
-use App\Http\Controllers\Admin\AdminPackagesReportController;
 use App\Http\Controllers\Admin\AdminSessionsReportController;
 use App\Http\Controllers\Admin\AdminSubscriptionsReportController;
 use App\Http\Controllers\Admin\BannerController as AdminBanner;
@@ -17,6 +16,9 @@ use App\Http\Controllers\Admin\AdminChatController;
 use App\Http\Controllers\Admin\AdminNotificationController;
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\AdminSettingsController;
+use App\Http\Controllers\Admin\ClientController;
+use App\Http\Controllers\Admin\AdminUserController;
+use App\Http\Controllers\Admin\RoleController;
 
 
 
@@ -68,11 +70,9 @@ Route::prefix('auth')->group(function () {
 
 Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
     Route::get('/therapists',        [AdminTherapist::class, 'index']);
-    Route::post('/therapists',       [AdminTherapist::class, 'store']);
     //get from therapist tabel {id}
     Route::get('/therapists/{id}',   [AdminTherapist::class, 'show']);
-    Route::patch('/therapists/{id}', [AdminTherapist::class, 'update']);
-    Route::delete('/therapists/{id}',[AdminTherapist::class, 'destroy']);
+
     Route::patch('/therapists/{id}/activate', [AdminTherapist::class, 'activate']);
     // === NEW: Availability & Timeoffs ===
     Route::get('/therapists/{id}/schedules', [AdminTherapist::class, 'schedules']);
@@ -80,11 +80,12 @@ Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(functio
 
     // === NEW: Performance & Sessions tab ===
     Route::get('/therapists/{id}/sessions',  [AdminTherapist::class, 'sessions']);
+    Route::get('/{id}/packages', [AdminTherapist::class, 'packages']);
+
+    // NEW — Single Session
+    Route::get('/{id}/single-session', [AdminTherapist::class, 'singleSession']);
 });
 Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
-  // Packages by doctor + details
-  Route::get('/packages',               [AdminPackagesReportController::class, 'index']);  // ?therapist_id=...
-  Route::get('/packages/{id}',          [AdminPackagesReportController::class, 'show']);   // details
 
   // Sessions by doctor + filters
   Route::get('/therapy-sessions',       [AdminSessionsReportController::class, 'index']);  // ?therapist_id=&status=&from=&to=
@@ -141,6 +142,38 @@ Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(functio
     Route::patch('/me/profile',    [AdminSettingsController::class, 'updateProfile']); // name/email/phone
     Route::post('/me/avatar',     [AdminSettingsController::class, 'updateAvatar']);  // avatar فقط
     Route::patch('/me/password',   [AdminSettingsController::class, 'updatePassword']);
+});
+Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
+
+    /* =======================
+     *  Clients Management
+     * =======================*/
+    Route::get('/clients',                [ClientController::class, 'index']);
+    Route::get('/clients/{id}',           [ClientController::class, 'show']);
+    Route::patch('/clients/{id}/status',  [ClientController::class, 'updateStatus']); // Active/Blocked
+    Route::post('/clients/{id}/notify',   [ClientController::class, 'sendNotification']); // زرار Send Notification
+
+    // 👇 دول موجودين أصلاً عندك وهنستخدمهم فى الشاشات:
+    // /admin/therapy-sessions?user_id=...
+    // /admin/subscriptions?user_id=...
+
+    /* =======================
+     *  Admin Users Management
+     * =======================*/
+    Route::get('/users',                  [AdminUserController::class, 'index']);   // كل الأدمن/الستاف
+    Route::post('/users',                 [AdminUserController::class, 'store']);   // Add User
+    Route::get('/users/{id}',             [AdminUserController::class, 'show']);    // View Details
+    Route::patch('/users/{id}',           [AdminUserController::class, 'update']);  // Edit basic info + status + roles
+    Route::patch('/users/{id}/password',  [AdminUserController::class, 'resetPassword']); // Temporary password
+
+    /* =======================
+     *  Roles Management
+     * =======================*/
+    Route::get('/roles',                  [RoleController::class, 'index']);
+    Route::post('/roles',                 [RoleController::class, 'store']);
+    Route::get('/roles/{id}',             [RoleController::class, 'show']);
+    Route::patch('/roles/{id}',           [RoleController::class, 'update']);
+    Route::delete('/roles/{id}',          [RoleController::class, 'destroy']);
 });
 // ===== Doctor (requires role:doctor) =====
 Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(function () {
@@ -211,7 +244,10 @@ Route::get('/therapists/{id}/availability', [PublicTherapist::class, 'availabili
 
 Route::middleware(['auth:sanctum'])->prefix('me')->group(function () {
     Route::get('/profile',            [UserProfileController::class, 'show']);
-    Route::put('/profile',          [UserProfileController::class, 'update']);
+  Route::patch('/profile/info', [UserProfileController::class, 'updateProfileInfo']);
+
+    // تحديث الصورة فقط
+    Route::post('/profile/avatar', [UserProfileController::class, 'updateAvatar']);
     Route::patch('/profile/password', [UserProfileController::class, 'updatePassword']);
 });
 

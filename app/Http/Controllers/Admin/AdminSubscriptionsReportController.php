@@ -17,6 +17,7 @@ class AdminSubscriptionsReportController extends Controller
         ->when($r->filled('therapist_id'), fn($x)=>$x->where('therapist_id',$r->therapist_id))
         ->when($r->filled('user_id'), fn($x)=>$x->where('user_id',$r->user_id))
         ->when($r->filled('status'), fn($x)=>$x->where('status',$r->status))
+        ->when($r->filled('id'), fn($x)=>$x->where('id', $r->id))  // ← NEW
         ->orderByDesc('id');
 
     return UserPackageResource::collection($q->paginate(20));

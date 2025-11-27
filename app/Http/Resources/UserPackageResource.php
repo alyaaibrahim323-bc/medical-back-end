@@ -35,7 +35,7 @@ class UserPackageResource extends JsonResource
                 'sessions_used'      => $this->sessions_used,
                 'sessions_remaining' => $sessionsRemaining,
                 'validity_days'      => $this->package->validity_days ?? null,
-                            'can_renew'      => (bool) $this->can_renew,
+                'can_renew'      => (bool) $this->can_renew,
 
             ],
 
