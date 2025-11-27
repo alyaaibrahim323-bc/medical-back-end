@@ -16,37 +16,31 @@ Broadcast::channel('chat.{chatId}', function ($user, int $chatId) {
         return false;
     }
 
-    // 🟢 مؤقتاً: اسمح لأي يوزر Authenticated يدخل أي chat (بس علشان نتأكد إن مفيش 403)
-    // لما تتأكدي إن كله شغال، نرجّع الشروط اللي تحتها
-    return true;
+    // client
+    if ($user->hasRole('client')) {
+        return Chat::where('id', $chatId)
+            ->where('user_id', $user->id)
+            ->exists();
+    }
 
-    // --- بعد كده رجّعي الشروط دي بدل return true ---
+    // doctor
+    if ($user->hasRole('doctor')) {
+        $therapistId = optional($user->therapist)->id;
+        if (! $therapistId) {
+            return false;
+        }
 
-    // // client
-    // if ($user->hasRole('client')) {
-    //     return Chat::where('id', $chatId)
-    //         ->where('user_id', $user->id)
-    //         ->exists();
-    // }
+        return Chat::where('id', $chatId)
+            ->where('therapist_id', $therapistId)
+            ->exists();
+    }
 
-    // // doctor
-    // if ($user->hasRole('doctor')) {
-    //     $therapistId = optional($user->therapist)->id;
-    //     if (! $therapistId) {
-    //         return false;
-    //     }
+    // admin
+    if ($user->hasRole('admin')) {
+        return true;
+    }
 
-    //     return Chat::where('id', $chatId)
-    //         ->where('therapist_id', $therapistId)
-    //         ->exists();
-    // }
-
-    // // admin
-    // if ($user->hasRole('admin')) {
-    //     return true;
-    // }
-
-    // return false;
+    return false;
 });
 
 // ============ NOTIFICATIONS CHANNEL ============
@@ -60,10 +54,6 @@ Broadcast::channel('notifications.user.{userId}', function ($user, int $userId) 
         return false;
     }
 
-    // 🟢 مؤقتاً: أي يوزر Authenticated يدخل أي notifications
-    // بعد التأكد من ال IDs هنرجع الشرط القديم
-    return true;
-
-    // --- بعد كده رجّعي الشرط ده بدل return true ---
-    // return (int) $user->id === (int) $userId;
+    // كل يوزر يشوف notifications بتاعته بس
+    return (int) $user->id === (int) $userId;
 });
