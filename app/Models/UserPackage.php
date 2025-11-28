@@ -21,6 +21,11 @@ class UserPackage extends Model
     public function therapist(){ return $this->belongsTo(Therapist::class); }
     public function payment(){ return $this->belongsTo(Payment::class); }
     public function redemptions(){ return $this->hasMany(PackageRedemption::class); }
+    public function payments()
+{
+    return $this->hasMany(Payment::class);
+}
+
 
     public function getCanRenewAttribute(): bool
     {

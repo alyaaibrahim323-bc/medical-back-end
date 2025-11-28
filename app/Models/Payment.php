@@ -61,4 +61,27 @@ class Payment extends Model
     {
         return $this->belongsTo(UserPackage::class);
     }
+    public function getPaymentMethodAttribute()
+{
+    $provider = strtolower($this->provider ?? '');
+
+    return match ($provider) {
+        'paymob'       => 'credit_card',
+        'card'         => 'credit_card',
+        'visa'         => 'credit_card',
+        'mastercard'   => 'credit_card',
+
+        'wallet'       => 'wallet',
+        'vodafone'     => 'wallet',
+        'etisalat'     => 'wallet',
+
+        'fawry'        => 'kiosk',
+        'kiosk'        => 'kiosk',
+
+        'cash'         => 'cash',
+
+        default        => 'other',
+    };
+}
+
 }
