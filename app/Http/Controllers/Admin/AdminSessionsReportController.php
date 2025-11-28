@@ -18,12 +18,9 @@ public function index(Request $r)
     // ----- COUNTS (لكل التابات) -----
     $counts = [
         'all'        => (clone $base)->count(),
-        'upcoming'   => (clone $base)->where('scheduled_at','>=',now())->count(),
-        'past'       => (clone $base)->where('scheduled_at','<',now())->count(),
         'completed'  => (clone $base)->where('status','completed')->count(),
         'cancelled'  => (clone $base)->where('status','cancelled')->count(),
-        'no_show'    => (clone $base)->where('status','no_show')->count(),
-        'pending'    => (clone $base)->where('status','pending')->count(),
+        'pending'    => (clone $base)->where('status','pending_payment')->count(),
         'confirmed'  => (clone $base)->where('status','confirmed')->count(),
     ];
 

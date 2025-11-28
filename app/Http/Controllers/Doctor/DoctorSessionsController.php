@@ -3,68 +3,208 @@
 namespace App\Http\Controllers\Doctor;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\CreateZoomAndNotifyJob;
-use App\Services\ZoomService;
-use Throwable;
-use Illuminate\Support\Facades\DB;
 use App\Models\TherapySession;
-use Illuminate\Http\Request;
 use App\Services\NotificationService;
+use App\Services\ZoomService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Throwable;
+use App\Mail\SessionLinkMail;
+use Illuminate\Support\Facades\Mail;
+
 
 
 class DoctorSessionsController extends Controller
 {
+    /**
+     * قائمة جلسات الدكتور:
+     * - scope = upcoming | past | all
+     * - status = pending|confirmed|completed|cancelled|no_show
+     * - search = اسم / إيميل الكلاينت
+     * - from / to = فلترة بتاريخ الجلسة
+     *
+     * GET /doctor/sessions?scope=upcoming&status=confirmed&search=menna&from=2025-11-01&to=2025-11-30
+     */
     public function index(Request $r)
     {
-        $therapistId = auth()->user()->therapist->id;
+        $therapistId = $r->user()->therapist->id;
 
-        $scope = $r->query('scope');
-        $q = TherapySession::with(['user','payment'])
+        // Base query
+        $base = TherapySession::with(['user','payment'])
             ->forDoctor($therapistId)
-            ->when($scope==='upcoming', fn($x)=>$x->upcoming())
-            ->when($scope==='past',     fn($x)=>$x->past())
-            ->orderBy('scheduled_at','desc');
+            ->orderBy('scheduled_at', 'desc');
 
-        // (اختياري) فلترة بالتاريخ
-        if ($r->filled('from')) $q->where('scheduled_at','>=', $r->query('from'));
-        if ($r->filled('to'))   $q->where('scheduled_at','<=', $r->query('to'));
+        // ✅ أرقام التابات / الستيتس للدكتور Dashboard
+        $counts = [
+            'all'        => (clone $base)->count(),
+            'past'       => (clone $base)->where('scheduled_at', '<',  now())->count(),
+            'pending'    => (clone $base)->where('status', TherapySession::STATUS_PENDING)->count(),
+            'confirmed'  => (clone $base)->where('status', TherapySession::STATUS_CONFIRMED)->count(),
+            'completed'  => (clone $base)->where('status', TherapySession::STATUS_COMPLETED)->count(),
+            'cancelled'  => (clone $base)->where('status', TherapySession::STATUS_CANCELLED)->count(),
+            'no_show'    => (clone $base)->where('status', TherapySession::STATUS_NO_SHOW)->count(),
+        ];
 
-        return response()->json(['data'=>$q->paginate(20)]);
+        $q = clone $base;
+
+        // 🔹 scope = upcoming | past | all
+        if ($scope = $r->query('scope')) {
+            if ($scope === 'upcoming') {
+                $q->where('scheduled_at', '>=', now());
+            } elseif ($scope === 'past') {
+                $q->where('scheduled_at', '<', now());
+            }
+        }
+
+        // 🔹 status filter
+        if ($r->filled('status') && in_array($r->status, [
+            TherapySession::STATUS_PENDING,
+            TherapySession::STATUS_CONFIRMED,
+            TherapySession::STATUS_COMPLETED,
+            TherapySession::STATUS_CANCELLED,
+            TherapySession::STATUS_NO_SHOW,
+        ], true)) {
+            $q->where('status', $r->status);
+        }
+
+        // 🔹 search على اسم / إيميل الكلاينت
+        if ($search = $r->query('search')) {
+            $q->whereHas('user', function ($u) use ($search) {
+                $u->where('name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
+        // 🔹 فلترة بالتاريخ
+        if ($r->filled('from')) {
+            $q->whereDate('scheduled_at', '>=', $r->query('from'));
+        }
+        if ($r->filled('to')) {
+            $q->whereDate('scheduled_at', '<=', $r->query('to'));
+        }
+
+        return response()->json([
+            'data'   => $q->paginate(20),
+            'counts' => $counts,
+        ]);
     }
 
-    public function show($id)
-    {
-        $therapistId = auth()->user()->therapist->id;
-        $s = TherapySession::with(['user','payment'])
-            ->where('therapist_id',$therapistId)
-            ->findOrFail($id);
+    /**
+     * تفاصيل جلسة واحدة للدكتور
+     */
+public function show(Request $r, $id)
+{
+    $therapistId = $r->user()->therapist->id;
 
-        return response()->json(['data'=>$s]);
+    $s = TherapySession::with([
+            'user',              // الكلاينت
+            'payment',
+            'therapist',
+            'therapist.user',
+        ])
+        ->where('therapist_id', $therapistId)
+        ->findOrFail($id);
+
+    // 🔢 إجمالى الجلسات الناجحة (completed) للثيرابست دا
+    $successfulSessionsCount = TherapySession::where('therapist_id', $therapistId)
+        ->where('status', TherapySession::STATUS_COMPLETED)
+        ->count();
+
+    // 💰 تحديد سعر الجلسة والعملة
+    $sessionPriceCents = null;
+    $sessionCurrency   = null;
+
+    if ($s->payment) {
+        // لو فيه Payment نحاول ناخد session_fee_cents من الـ payload
+        $payload = $s->payment->payload ?? [];
+        $sessionPriceCents = $payload['session_fee_cents'] ?? $s->payment->amount_cents;
+        $sessionCurrency   = $s->payment->currency;
+    } else {
+        // fallback من الثيرابست نفسه
+        $sessionPriceCents = $s->therapist->price_cents ?? null;
+        $sessionCurrency   = $s->therapist->currency ?? 'EGP';
     }
 
-    public function updateStatus(Request $r, $id)
+    return response()->json([
+        'data' => [
+            'id'           => $s->id,
+            'status'       => $s->status,
+            'scheduled_at' => $s->scheduled_at,
+            'duration_min' => $s->duration_min,
+
+            // 👇 بيانات العميل
+            'client' => [
+                'id'     => $s->user->id,
+                'name'   => $s->user->name,
+                'email'  => $s->user->email,
+                'avatar' => $s->user->avatar,
+                'phone'  => $s->user->phone,
+            ],
+
+            // 👇 بيانات الثيرابست
+            'therapist' => [
+                'id'                       => $s->therapist->id,
+                'name'                     => $s->therapist->user->name,
+                'email'                    => $s->therapist->user->email,
+                'avatar'                   => $s->therapist->user->avatar,
+                'successful_sessions_count'=> $successfulSessionsCount,
+                'session_price_cents'      => $sessionPriceCents,
+                'session_currency'         => $sessionCurrency,
+            ],
+
+            // 👇 بيانات الدفع لو موجود
+            'payment' => $s->payment ? [
+                'id'           => $s->payment->id,
+                'amount_cents' => $s->payment->amount_cents,
+                'currency'     => $s->payment->currency,
+                'status'       => $s->payment->status,
+                'provider'     => $s->payment->provider, // 👈 الإضافة الجديدة
+            ] : null,
+        ],
+    ]);
+}
+
+
+
+    /**
+     * الدكتور يغيّر حالة الجلسة:
+     * status = confirmed | completed | cancelled | no_show
+     *
+     * لو بقت completed → نبعَت auto-notification "Rate your therapist"
+     */
+    public function updateStatus(Request $r, $id, NotificationService $notifications)
     {
-        $therapistId = auth()->user()->therapist->id;
-        $s = TherapySession::where('therapist_id',$therapistId)->findOrFail($id);
+        $therapistId = $r->user()->therapist->id;
+
+        /** @var TherapySession $session */
+        $session = TherapySession::where('therapist_id', $therapistId)->findOrFail($id);
 
         $data = $r->validate([
-            'status' => ['required','in:confirmed,completed,cancelled,no_show']
+            'status' => ['required','in:confirmed,completed,cancelled,no_show'],
         ]);
 
-        $s->update(['status'=>$data['status']]);
+        $newStatus = $data['status'];
+
+        $session->update(['status' => $newStatus]);
+
+        // ✅ لما الجلسة تكمّل → ابعتي نتوفكيشن ريتنج
         if ($newStatus === TherapySession::STATUS_COMPLETED) {
-    app(NotificationService::class)->sendToUser(
-        $session->user_id,
-        'session_rating',
-        [
-            'doctor' => $session->therapist->user->name,
-            'session_id' => $session->id,
-        ]
-    );
-}
-        return response()->json(['data'=>$s->refresh()]);
+            $notifications->sendToUser(
+                $session->user_id,
+                'session_rating',
+                [
+                    'doctor'     => $session->therapist->user->name,
+                    'session_id' => $session->id,
+                ]
+            );
+        }
+
+        return response()->json(['data' => $session->refresh()]);
     }
 
+    /**
+     * إنشاء Zoom meeting تلقائياً للجلسة
+     */
     public function createZoom(Request $r, int $id, ZoomService $zoom)
     {
         $therapistId = $r->user()->therapist->id;
@@ -74,6 +214,7 @@ class DoctorSessionsController extends Controller
         if ($s->status !== TherapySession::STATUS_CONFIRMED) {
             return response()->json(['message'=>'Session must be confirmed first.'], 422);
         }
+
         if ($s->zoom_join_url) {
             return response()->json([
                 'message'=>'Zoom meeting already exists.',
@@ -82,8 +223,6 @@ class DoctorSessionsController extends Controller
                     'zoom_meeting_id'=>$s->zoom_meeting_id,
                     'join_url'=>$s->zoom_join_url,
                     'start_url'=>$s->zoom_start_url,
-                    'scheduled_at'=>$s->scheduled_at,
-                    'duration_min'=>$s->duration_min,
                 ]
             ], 409);
         }
@@ -103,18 +242,26 @@ class DoctorSessionsController extends Controller
                 ]);
             });
 
-            // (اختياري المرحلة 3) ابعت للمستخدم بالـ join_url:
-            // Mail::to($s->user->email)->send(new SessionLinkMail($s, $s->zoom_join_url));
+            // 🌟 Send Email to User
+            Mail::to($s->user->email)->send(new SessionLinkMail($s, $s->zoom_join_url));
+
+            // 🌟 Send In-App Notification
+            app(NotificationService::class)->sendToUser(
+                $s->user_id,
+                'session_link_ready',
+                [
+                    'session_id' => $s->id,
+                    'message' => 'تم إرسال لينك الجلسة إلى بريدك الإلكتروني. برجاء فحص الإيميل.',
+                ]
+            );
 
             return response()->json([
-                'message'=>'Zoom meeting created successfully.',
+                'message'=>'Zoom meeting created & user notified.',
                 'data'=>[
                     'session_id'=>$s->id,
                     'zoom_meeting_id'=>$meeting['id'] ?? null,
                     'join_url'=>$meeting['join_url'] ?? null,
                     'start_url'=>$meeting['start_url'] ?? null,
-                    'scheduled_at'=>$s->scheduled_at,
-                    'duration_min'=>$s->duration_min,
                 ]
             ], 201);
 
@@ -123,7 +270,9 @@ class DoctorSessionsController extends Controller
         }
     }
 
-    // 2.2 إضافة لينك يدوي (كما في المودال بالصورة)
+    /**
+     * الدكتور يضيف لينك يدوي + إرسال لإيميل + إرسال Notification
+     */
     public function addSessionLink(Request $r, int $id)
     {
         $data = $r->validate([
@@ -141,17 +290,25 @@ class DoctorSessionsController extends Controller
 
         $s->update($data);
 
-        // (اختياري المرحلة 3) ابعت للمستخدم بالـ join_url:
-        // Mail::to($s->user->email)->send(new SessionLinkMail($s, $s->zoom_join_url));
+        // 🌟 Send Email
+        Mail::to($s->user->email)->send(new SessionLinkMail($s, $s->zoom_join_url));
+
+        // 🌟 Send Notification
+        app(NotificationService::class)->sendToUser(
+            $s->user_id,
+            'session_link_ready',
+            [
+                'session_id' => $s->id,
+                'message' => 'تم إرسال لينك الجلسة إلى بريدك الإلكتروني. برجاء فحص الإيميل.',
+            ]
+        );
 
         return response()->json([
-            'message'=>'Session link saved.',
+            'message'=>'Session link saved & user notified.',
             'data'=>[
                 'session_id'=>$s->id,
                 'join_url'=>$s->zoom_join_url,
                 'start_url'=>$s->zoom_start_url,
-                'scheduled_at'=>$s->scheduled_at,
-                'duration_min'=>$s->duration_min,
             ]
         ]);
     }
