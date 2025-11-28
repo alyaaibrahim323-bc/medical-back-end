@@ -12,43 +12,57 @@ use Illuminate\Http\Request;
 class AdminChatController extends Controller
 {
     public function index(Request $request)
-    {
-        $query = Chat::with(['session','user','therapist']);
+{
+    // ===== 1) Base Query من غير status (عشان نطلع counts مظبوطة) =====
+    $base = Chat::with(['session','user','therapist']);
 
-        // فلترة بسيطة حسب النوع (support) أو لو سيبنا session للمستقبل
-        if ($type = $request->get('type')) {
-            $query->where('type', $type);
-        }
-
-        if ($tab = $request->get('tab')) {
-            if ($tab === 'pending') {
-                $query->where('status','pending');
-            } elseif ($tab === 'replied') {
-                $query->where('status','replied');
-            } elseif ($tab === 'closed') {
-                $query->where('status','closed');
-            }
-        }
-
-        if ($search = $request->get('search')) {
-            $query->whereHas('user', function ($q) use ($search) {
-                $q->where('name', 'like', "%$search%")
-                  ->orWhere('email', 'like', "%$search%");
-            });
-        }
-
-        if ($from = $request->get('from')) {
-            $query->whereDate('last_message_at', '>=', $from);
-        }
-
-        if ($to = $request->get('to')) {
-            $query->whereDate('last_message_at', '<=', $to);
-        }
-
-        $chats = $query->latest('last_message_at')->paginate(20);
-
-        return AdminChatResource::collection($chats);
+    // فلترة حسب النوع (support / session) لو عايزين
+    if ($type = $request->get('type')) {
+        $base->where('type', $type);
     }
+
+    // search by user name / email
+    if ($search = $request->get('search')) {
+        $base->whereHas('user', function ($q) use ($search) {
+            $q->where('name', 'like', "%{$search}%")
+              ->orWhere('email', 'like', "%{$search}%");
+        });
+    }
+
+    // فلتر التاريخ
+    if ($from = $request->get('from')) {
+        $base->whereDate('last_message_at', '>=', $from);
+    }
+    if ($to = $request->get('to')) {
+        $base->whereDate('last_message_at', '<=', $to);
+    }
+
+    // ===== 2) الـ counts لكل تاب =====
+    $counts = [
+        'all'     => (clone $base)->count(),
+        'pending' => (clone $base)->where('status', 'pending')->count(),
+        'replied' => (clone $base)->where('status', 'replied')->count(),
+        'closed'  => (clone $base)->where('status', 'closed')->count(),
+    ];
+
+    // ===== 3) الـ List الفعلية حسب التاب المختار =====
+    $q = clone $base;
+
+    if ($tab = $request->get('tab')) {
+        if (in_array($tab, ['pending','replied','closed'], true)) {
+            $q->where('status', $tab);
+        }
+    }
+
+    $chats = $q->orderByDesc('last_message_at')->paginate(20);
+
+    // نرجّع الـ data + counts
+    return response()->json([
+        'data'   => AdminChatResource::collection($chats),
+        'counts' => $counts,
+    ]);
+}
+
 
     public function assign(AssignChatRequest $request, Chat $chat)
     {

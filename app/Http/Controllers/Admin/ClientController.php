@@ -16,16 +16,11 @@ class ClientController extends Controller
      * قائمة الكلاينتس (All / Active / Blocked + Search)
      * GET /admin/clients?status=active|blocked&search=...
      */
-    public function index(Request $r)
+public function index(Request $r)
 {
-    $q = User::query()
+    // base query (من غير status)
+    $base = User::query()
         ->where('role', 'user')
-        ->withCount(['therapySessions as sessions_count']) // 👈 عدد الجلسات
-        ->when($r->filled('status'), function ($x) use ($r) {
-            if (in_array($r->status, ['active','blocked'], true)) {
-                $x->where('status', $r->status);
-            }
-        })
         ->when($r->filled('search'), function ($x) use ($r) {
             $s = $r->search;
             $x->where(function ($q) use ($s) {
@@ -34,13 +29,26 @@ class ClientController extends Controller
                   ->orWhere('phone', 'like', "%{$s}%")
                   ->orWhere('id', $s);
             });
-        })
-        ->orderByDesc('id');
+        });
 
-    $clients = $q->paginate(20);
+    // 👈 الأرقام لكل تاب
+    $counts = [
+        'all'     => (clone $base)->count(),
+        'active'  => (clone $base)->where('status', 'active')->count(),
+        'blocked' => (clone $base)->where('status', 'blocked')->count(),
+    ];
+
+    // الفلتر اللى جاى من الواجهة
+    $q = clone $base;
+    if ($r->filled('status') && in_array($r->status, ['active','blocked'], true)) {
+        $q->where('status', $r->status);
+    }
+
+    $clients = $q->orderByDesc('id')->paginate(20);
 
     return response()->json([
-        'data' => $clients,
+        'data'   => $clients,
+        'counts' => $counts,
     ]);
 }
 
@@ -50,39 +58,40 @@ class ClientController extends Controller
      *   /admin/therapy-sessions?user_id=...
      *   /admin/subscriptions?user_id=...
      */
-    public function show($id)
-    {
-        $user = User::where('role', 'user')->findOrFail($id);
+   public function show($id)
+{
+    $user = User::where('role', 'user')->findOrFail($id);
 
-        $totalSessions   = TherapySession::where('user_id', $user->id)->count();
-        $upcomingSessions= TherapySession::where('user_id', $user->id)
-            ->where('scheduled_at','>=', now())
-            ->count();
-        $completedSessions = TherapySession::where('user_id', $user->id)
-            ->where('status', TherapySession::STATUS_COMPLETED)
-            ->count();
+    $totalSessions   = TherapySession::where('user_id', $user->id)->count();
+    $upcomingSessions= TherapySession::where('user_id', $user->id)
+        ->where('scheduled_at','>=', now())
+        ->count();
+    $completedSessions = TherapySession::where('user_id', $user->id)
+        ->where('status', TherapySession::STATUS_COMPLETED)
+        ->count();
 
-        $activeSubscriptions = UserPackage::where('user_id', $user->id)
-            ->where('status', 'active')
-            ->count();
+    $activeSubscriptions = UserPackage::where('user_id', $user->id)
+        ->where('status', 'active')
+        ->count();
 
-        $totalSpentCents = Payment::where('user_id', $user->id)
-            ->where('status', Payment::STATUS_PAID)
-            ->sum('amount_cents');
+    $totalSpentCents = Payment::where('user_id', $user->id)
+        ->where('status', Payment::STATUS_PAID)
+        ->sum('amount_cents');
 
-        return response()->json([
-            'data' => [
-                'client' => $user,
-                'stats'  => [
-                    'sessions_total'     => $totalSessions,
-                    'sessions_upcoming'  => $upcomingSessions,
-                    'sessions_completed' => $completedSessions,
-                    'subscriptions_active'=> $activeSubscriptions,
-                    'total_spent_cents'  => $totalSpentCents,
-                ],
+    return response()->json([
+        'data' => [
+            'client' => $user,
+            'stats'  => [
+                'sessions_total'      => $totalSessions,
+                'sessions_upcoming'   => $upcomingSessions,
+                'sessions_completed'  => $completedSessions,
+                'subscriptions_active'=> $activeSubscriptions,
+                'total_spent_cents'   => $totalSpentCents,
             ],
-        ]);
-    }
+        ],
+    ]);
+}
+
 
     /**
      * Block / Active

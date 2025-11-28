@@ -12,43 +12,65 @@ use Illuminate\Validation\Rule;
 class AdminUserController extends Controller
 {
     /**
-     * قائمة ال Admin/Staff Users
-     * GET /admin/users?status=active|blocked&role=...&search=...
+     *  GET /admin/users
+     *  ?status=active|blocked|inactive
+     *  ?role=admin|doctor|staff|user
+     *  ?search=keyword
+     *  يرجّع:
+     *  data + counts
      */
     public function index(Request $r)
     {
-        $q = User::query()
-            ->whereIn('role', ['admin','doctor']); // عدلي حسب الأدوار اللي عندك
+        // Base query (Admins + Doctors + Staff)
+        $base = User::query()
+            ->whereIn('role', ['admin','doctor']);
 
-        $q->when($r->filled('status'), function ($x) use ($r) {
-            if (in_array($r->status, ['active','blocked','inactive'], true)) {
-                $x->where('status', $r->status);
-            }
-        });
-
-        $q->when($r->filled('search'), function ($x) use ($r) {
+        // Search
+        $base->when($r->filled('search'), function ($q) use ($r) {
             $s = $r->search;
-            $x->where(function ($q) use ($s) {
-                $q->where('name','like',"%{$s}%")
+            $q->where(function ($x) use ($s) {
+                $x->where('name','like',"%{$s}%")
                   ->orWhere('email','like',"%{$s}%")
                   ->orWhere('phone','like',"%{$s}%")
                   ->orWhere('id', $s);
             });
         });
 
-        $q->when($r->filled('role'), function ($x) use ($r) {
-            $role = $r->role;
-            $x->whereHas('roles', fn($q)=>$q->where('name',$role));
+        // Role filter
+        $base->when($r->filled('role'), function ($q) use ($r) {
+            $q->where('role', $r->role);
         });
 
-        $users = $q->with('roles')->orderByDesc('id')->paginate(20);
+        // Status filter
+        $base->when($r->filled('status'), function ($q) use ($r) {
+            if (in_array($r->status, ['active','blocked','inactive'], true)) {
+                $q->where('status', $r->status);
+            }
+        });
 
-        return response()->json(['data' => $users]);
+        // -------------------------------
+        // Counts for dashboard tabs
+        // -------------------------------
+        $counts = [
+            'all'     => (clone $base)->count(),
+            'active'  => (clone $base)->where('status','active')->count(),
+            'blocked' => (clone $base)->where('status','blocked')->count(),
+            'inactive'=> (clone $base)->where('status','inactive')->count(),
+        ];
+
+        // Pagination data
+        $users = $base->with('roles')->orderByDesc('id')->paginate(20);
+
+        return response()->json([
+            'data'   => $users,
+            'counts' => $counts,
+        ]);
     }
 
+
     /**
-     * Add User (Admin / Staff)
-     * POST /admin/users
+     *  POST /admin/users
+     *  إنشاء Admin / Staff / Doctor
      */
     public function store(Request $r)
     {
@@ -57,79 +79,82 @@ class AdminUserController extends Controller
             'email'    => ['required','email','unique:users,email'],
             'phone'    => ['nullable','string','max:30'],
             'password' => ['required','string','min:8'],
-            'role'     => ['required', Rule::in(['admin','doctor','staff','user'])],
+            'role'     => ['required', Rule::in(['admin','doctor'])],
             'status'   => ['nullable', Rule::in(['active','blocked','inactive'])],
         ]);
 
         $user = User::create([
-            'name'   => $data['name'],
-            'email'  => $data['email'],
-            'phone'  => $data['phone'] ?? null,
+            'name'     => $data['name'],
+            'email'    => $data['email'],
+            'phone'    => $data['phone'] ?? null,
             'password' => Hash::make($data['password']),
-            'role'   =>  $data['role'],
-            'status' => $data['status'] ?? 'active',
+            'role'     => $data['role'],
+            'status'   => $data['status'] ?? 'active',
         ]);
 
         // Assign Spatie role
         $user->syncRoles([$data['role']]);
 
         return response()->json([
-            'message' => 'Admin user created',
+            'message' => 'User created successfully',
             'data'    => $user->load('roles'),
         ], 201);
     }
 
+
     /**
-     * View Details popup
      * GET /admin/users/{id}
+     * صفحة Show Details
      */
     public function show($id)
     {
-        $user = User::with('roles')->whereIn('role',['admin','doctor'])->findOrFail($id);
+        $user = User::with('roles')
+            ->whereIn('role',['admin','doctor'])
+            ->findOrFail($id);
 
         return response()->json(['data' => $user]);
     }
 
+
     /**
-     * Edit basic info + status + roles
      * PATCH /admin/users/{id}
+     * تعديل بيانات يوزر (باسورد اختياري)
      */
-   public function update(Request $r, $id)
-{
-    $user = User::whereIn('role', ['admin','doctor'])->findOrFail($id);
+    public function update(Request $r, $id)
+    {
+        $user = User::whereIn('role', ['admin','doctor'])->findOrFail($id);
 
-    $data = $r->validate([
-        'name'      => ['sometimes','string','max:120'],
-        'email'     => ['sometimes','email', Rule::unique('users','email')->ignore($user->id)],
-        'phone'     => ['sometimes','string','max:30'],
-        'status'    => ['sometimes', Rule::in(['active','blocked'])],
-        'roles'     => ['sometimes','array'],   // ["admin","support_agent"]
-        'roles.*'   => ['string'],
-        'password'  => ['sometimes','string','min:8'], // 👈 جديد
-    ]);
+        $data = $r->validate([
+            'name'      => ['sometimes','string','max:120'],
+            'email'     => ['sometimes','email', Rule::unique('users','email')->ignore($user->id)],
+            'phone'     => ['sometimes','string','max:30'],
+            'status'    => ['sometimes', Rule::in(['active','blocked','inactive'])],
+            'roles'     => ['sometimes','array'],
+            'roles.*'   => ['string'],
+            'password'  => ['sometimes','string','min:8'],
+        ]);
 
-    // نجهز الداتا اللي هتروح لـ update
-    $updateData = $data;
+        // build update array
+        $updateData = $data;
 
-    // مانبعّتش roles ولا password raw على الـ update()
-    unset($updateData['roles'], $updateData['password']);
+        unset($updateData['roles'], $updateData['password']);
 
-    // لو فيه password في الريكوست → نعمله Hash ونضيفه
-    if (array_key_exists('password', $data)) {
-        $updateData['password'] = Hash::make($data['password']);
+        // handle password if found
+        if (isset($data['password'])) {
+            $updateData['password'] = Hash::make($data['password']);
+        }
+
+        // update record
+        $user->update($updateData);
+
+        // update roles (Spatie)
+        if (isset($data['roles'])) {
+            $user->syncRoles($data['roles']);
+        }
+
+        return response()->json([
+            'message' => 'User updated successfully',
+            'data'    => $user->fresh()->load('roles'),
+        ]);
     }
-
-    // نعمل تحديث لكل الفيلدز العادية + الباسورد لو موجود
-    $user->update($updateData);
-
-    // لو فيه roles في الريكوست → نعمل syncRoles
-    if (array_key_exists('roles', $data)) {
-        $user->syncRoles($data['roles']);
-    }
-
-    return response()->json([
-        'message' => 'Admin user updated',
-        'data'    => $user->fresh()->load('roles'),
-    ]);
-}
 }

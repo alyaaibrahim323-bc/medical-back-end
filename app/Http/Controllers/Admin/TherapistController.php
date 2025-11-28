@@ -3,80 +3,131 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Admin\StoreTherapistRequest;
-use App\Http\Requests\Admin\UpdateTherapistRequest;
 use App\Models\Therapist;
 use App\Models\User;
 use App\Models\TherapySession;
 use App\Models\TherapistSchedule;
 use App\Models\TherapistTimeoff;
+use App\Models\Package;
+use App\Models\SingleSessionOffer;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 
 class TherapistController extends Controller
 {
     /**
-     * Therapists Management list
-     * - Search
-     * - Filter by active
-     * - Total Sessions count
+     * ============================================================
+     *  LIST PAGE — WITH COUNTS + SEARCH + ACTIVE FILTER
+     * ============================================================
+     * GET /admin/therapists?search=&active=true|false
      */
     public function index(Request $request)
     {
-        $q = Therapist::with('user')
-            // إجمالى عدد الجلسات لكل دكتور
-            ->withCount('sessions')
+        $base = Therapist::with('user')
+            ->withCount('sessions');
 
-            // 🔍 search by (name / email / phone) from users + therapist id
-            ->when($request->filled('search'), function ($x) use ($request) {
-                $s = $request->search;
+        // 🔍 search
+        $base->when($request->filled('search'), function ($q) use ($request) {
+            $s = $request->search;
 
-                $x->where(function ($q) use ($s) {
-                    $q->whereHas('user', function ($u) use ($s) {
-                        $u->where('name', 'like', "%{$s}%")
-                          ->orWhere('email', 'like', "%{$s}%")
-                          ->orWhere('phone', 'like', "%{$s}%");
-                    })
-                    ->orWhere('id', $s); // search by therapist_id
-                });
-            })
+            $q->where(function ($x) use ($s) {
+                $x->whereHas('user', function ($u) use ($s) {
+                    $u->where('name', 'like', "%{$s}%")
+                      ->orWhere('email', 'like', "%{$s}%")
+                      ->orWhere('phone', 'like', "%{$s}%");
+                })
+                ->orWhere('id', $s);
+            });
+        });
 
-            // Active / Inactive filter
-            ->when($request->filled('active'), fn($x) =>
-                $x->where('is_active', filter_var($request->active, FILTER_VALIDATE_BOOLEAN))
-            )
-            ->orderByDesc('id')
-            ->paginate(20);
+        // Active filter
+        $base->when($request->filled('active'), function ($q) use ($request) {
+            $q->where(
+                'is_active',
+                filter_var($request->active, FILTER_VALIDATE_BOOLEAN)
+            );
+        });
 
-        return response()->json(['data' => $q]);
+        // -----------------------
+        // COUNTS FOR DASHBOARD
+        // -----------------------
+        $counts = [
+            'all'      => (clone $base)->count(),
+            'active'   => (clone $base)->where('is_active', 1)->count(),
+            'inactive' => (clone $base)->where('is_active', 0)->count(),
+        ];
+
+        // PAGINATION
+        $list = $base->orderByDesc('id')->paginate(20);
+
+        return response()->json([
+            'data'   => $list,
+            'counts' => $counts,
+        ]);
     }
 
 
+    /**
+     * ============================================================
+     *  SHOW — BASIC INFO + counts (Sessions, Packages, Timeoffs)
+     * ============================================================
+     * GET /admin/therapists/{id}
+     */
     public function show($id)
-    {
-        $t = Therapist::with('user')
-            ->withCount('sessions') // total sessions for details header
-            ->findOrFail($id);
+{
+    // نجيب الثيرابست + اليوزر + sessions_count للهيدر
+    $t = Therapist::with('user')
+        ->withCount('sessions')
+        ->findOrFail($id);
 
-        return response()->json(['data' => $t]);
-    }
+    // نستخدم نفس الـ id بتاع الـ Therapist اللي جبناه (مش الـ parameter بس)
+    $therapistId = $t->id;
 
+    // Dashboard header numbers
+    $counts = [
+        'sessions_total'    => TherapySession::where('therapist_id', $therapistId)->count(),
+        'sessions_upcoming' => TherapySession::where('therapist_id', $therapistId)
+                                    ->where('scheduled_at', '>=', now())
+                                    ->count(),
+        'sessions_past'     => TherapySession::where('therapist_id', $therapistId)
+                                    ->where('scheduled_at', '<', now())
+                                    ->count(),
+        'packages'          => Package::where('created_by_therapist_id', $therapistId)->count(),
+        'timeoffs'          => TherapistTimeoff::where('therapist_id', $therapistId)->count(),
+    ];
+
+    return response()->json([
+        'data'   => $t,
+        'counts' => $counts,
+    ]);
+}
+
+
+
+    /**
+     * DELETE /admin/therapists/{id}
+     */
     public function destroy($id)
     {
         Therapist::findOrFail($id)->delete();
         return response()->json(['message' => 'Deleted']);
     }
 
+
+    /**
+     * Activate / Deactivate
+     * PATCH /admin/therapists/{id}/activate
+     */
     public function activate(Request $request, $id)
     {
         $request->validate(['is_active' => ['required','boolean']]);
-        $t = Therapist::with('user')->findOrFail($id);
-        $t->update(['is_active' => (bool) $request->is_active]);
 
-        // لو فعّلناه نخلي اليوزر دكتور
+        $t = Therapist::with('user')->findOrFail($id);
+        $t->update(['is_active' => $request->boolean('is_active')]);
+
         if ($request->boolean('is_active')) {
             $user = $t->user;
+
             if ($user->role !== 'doctor') {
                 $user->role = 'doctor';
                 $user->save();
@@ -89,12 +140,14 @@ class TherapistController extends Controller
         return response()->json(['data' => $t]);
     }
 
+
     /**
-     * Availability tab:
+     * ============================================================
+     *  SCHEDULES TAB
+     * ============================================================
      * GET /admin/therapists/{id}/schedules
-     * يعرض Day + Available Time...
      */
-    public function schedules($id)
+   public function schedules($id)
     {
         $therapist = Therapist::findOrFail($id);
 
@@ -124,14 +177,16 @@ class TherapistController extends Controller
     }
 
     /**
-     * Timeoffs tab:
+     * ============================================================
+     *  TIMEOFFS TAB
+     * ============================================================
      * GET /admin/therapists/{id}/timeoffs
      */
     public function timeoffs($id)
     {
         $therapist = Therapist::findOrFail($id);
 
-        $rows = TherapistTimeoff::where('therapist_id', $therapist->id)
+        $rows = TherapistTimeoff::where('therapist_id',$id)
             ->orderByDesc('start_at')
             ->get();
 
@@ -140,37 +195,44 @@ class TherapistController extends Controller
         ]);
     }
 
+
     /**
-     * Performance & Activity tab:
-     * - All Sessions / Upcoming / Completed
-     * GET /admin/therapists/{id}/sessions?status=&scope=&from=&to=
+     * ============================================================
+     *  SESSIONS TAB + FILTERS
+     * ============================================================
+     * GET /admin/therapists/{id}/sessions
      */
     public function sessions(Request $request, $id)
     {
         $therapist = Therapist::findOrFail($id);
 
         $q = TherapySession::with(['user','userPackage.package'])
-            ->where('therapist_id', $therapist->id)
+            ->where('therapist_id', $id)
             ->orderByDesc('scheduled_at');
 
-        // status: pending_payment / confirmed / completed / cancelled / no_show
+        // ==========================
+        // Status filter
+        // ==========================
         if ($request->filled('status')) {
             $q->where('status', $request->status);
         }
 
-        // scope = upcoming | past (All Session / Upcoming / Completed فى الديزاين)
-        if ($request->query('scope') === 'upcoming') {
-            $q->where('scheduled_at', '>=', now());
-        } elseif ($request->query('scope') === 'past') {
-            $q->where('scheduled_at', '<', now());
+        // ==========================
+        // scope = upcoming | past
+        // ==========================
+        if ($request->scope === 'upcoming') {
+            $q->where('scheduled_at','>=',now());
+        }
+        elseif ($request->scope === 'past') {
+            $q->where('scheduled_at','<',now());
         }
 
-        // Filter by date range (from / to)
+        // Date range
         if ($request->filled('from')) {
-            $q->whereDate('scheduled_at', '>=', $request->from);
+            $q->whereDate('scheduled_at','>=',$request->from);
         }
         if ($request->filled('to')) {
-            $q->whereDate('scheduled_at', '<=', $request->to);
+            $q->whereDate('scheduled_at','<=',$request->to);
         }
 
         return response()->json([
@@ -178,27 +240,37 @@ class TherapistController extends Controller
         ]);
     }
 
+
+    /**
+     * ============================================================
+     *  PACKAGES TAB
+     * ============================================================
+     * GET /admin/therapists/{id}/packages
+     */
     public function packages($id)
-{
-    $therapist = Therapist::findOrFail($id);
+    {
+        $rows = Package::where('created_by_therapist_id',$id)
+            ->orderByDesc('id')
+            ->get();
 
-    $rows = \App\Models\Package::where('created_by_therapist_id', $therapist->id)
-        ->orderByDesc('id')
-        ->get();
+        return response()->json([
+            'data' => $rows,
+        ]);
+    }
 
-    return response()->json([
-        'data' => $rows,
-    ]);
-}
-public function singleSession($id)
-{
-    $therapist = Therapist::findOrFail($id);
 
-    $row = \App\Models\SingleSessionOffer::where('therapist_id', $therapist->id)->first();
+    /**
+     * ============================================================
+     *  SINGLE SESSION OFFER TAB
+     * ============================================================
+     * GET /admin/therapists/{id}/single-session
+     */
+    public function singleSession($id)
+    {
+        $row = SingleSessionOffer::where('therapist_id',$id)->first();
 
-    return response()->json([
-        'data' => $row,
-    ]);
-}
-
+        return response()->json([
+            'data' => $row,
+        ]);
+    }
 }

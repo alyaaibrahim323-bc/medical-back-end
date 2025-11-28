@@ -11,16 +11,36 @@ class BannerController extends Controller
 {
     // GET /admin/banners?status=active|inactive|all
     public function index(Request $r)
-    {
-        $q = Banner::query()
-            ->when($r->status && $r->status !== 'all', function ($x) use ($r) {
-                $x->where('status', $r->status);
-            })
-            ->orderBy('sort_order')
-            ->orderByDesc('id');
+{
+    // 1) Base query من غير فلتر status (عشان نقدر نطلع counts مظبوطة)
+    $base = Banner::query();
 
-        return response()->json(['data' => $q->paginate(20)]);
+    // 2) الأرقام لكل تاب
+    $counts = [
+        'all'      => (clone $base)->count(),
+        'active'   => (clone $base)->where('status', 'active')->count(),
+        'inactive' => (clone $base)->where('status', 'inactive')->count(),
+    ];
+
+    // 3) فلترة الـ list حسب التاب/الـ status لو مبعوت من الـ UI
+    $q = clone $base;
+
+    if ($r->filled('status') && $r->status !== 'all') {
+        if (in_array($r->status, ['active', 'inactive'], true)) {
+            $q->where('status', $r->status);
+        }
     }
+
+    $q->orderBy('sort_order')
+      ->orderByDesc('id');
+
+    // 4) الريسبونس: data + counts عشان الداشبورد
+    return response()->json([
+        'data'   => $q->paginate(20),
+        'counts' => $counts,
+    ]);
+}
+
 
     // POST /admin/banners
     public function store(Request $r)

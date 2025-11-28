@@ -21,37 +21,54 @@ class AdminNotificationController extends Controller
      *  - to=2025-01-31
      *  - search=string
      */
-    public function index(Request $r)
-    {
-        $q = Notification::query()
-            ->withCount('deliveries')
-            ->orderByDesc('created_at');
+   public function index(Request $r)
+{
+    // ----- BASE QUERY (بدون status) -----
+    $base = Notification::query()
+        ->withCount('deliveries')
+        ->orderByDesc('created_at');
 
-        if ($status = $r->query('status')) {
-            $q->where('status', $status);
-        }
-
-        if ($search = $r->query('search')) {
-            $q->where(function ($qq) use ($search) {
-                $qq->where('title_en', 'like', "%{$search}%")
-                   ->orWhere('title_ar', 'like', "%{$search}%")
-                   ->orWhere('body_en', 'like', "%{$search}%")
-                   ->orWhere('body_ar', 'like', "%{$search}%");
-            });
-        }
-
-        if ($from = $r->query('from')) {
-            $q->whereDate('created_at', '>=', $from);
-        }
-
-        if ($to = $r->query('to')) {
-            $q->whereDate('created_at', '<=', $to);
-        }
-
-        $notifications = $q->paginate(20);
-
-        return NotificationResource::collection($notifications);
+    // نفس الفلاتر (search / from / to) هتتطبّق على الـ counts والـ list
+    if ($search = $r->query('search')) {
+        $base->where(function ($qq) use ($search) {
+            $qq->where('title_en', 'like', "%{$search}%")
+               ->orWhere('title_ar', 'like', "%{$search}%")
+               ->orWhere('body_en', 'like', "%{$search}%")
+               ->orWhere('body_ar', 'like', "%{$search}%");
+        });
     }
+
+    if ($from = $r->query('from')) {
+        $base->whereDate('created_at', '>=', $from);
+    }
+
+    if ($to = $r->query('to')) {
+        $base->whereDate('created_at', '<=', $to);
+    }
+
+    // ----- COUNTS لكل التابات -----
+    $counts = [
+        'all'       => (clone $base)->count(),
+        'sent'      => (clone $base)->where('status', 'sent')->count(),
+        'scheduled' => (clone $base)->where('status', 'scheduled')->count(),
+        'draft'     => (clone $base)->where('status', 'draft')->count(),
+    ];
+
+    // ----- LIST مع فلتر status لو موجود -----
+    $q = clone $base;
+
+    if ($status = $r->query('status')) {
+        $q->where('status', $status);
+    }
+
+    $notifications = $q->paginate(20);
+
+    return response()->json([
+        'data'   => NotificationResource::collection($notifications),
+        'counts' => $counts,
+    ]);
+}
+
 
     /**
      * GET /admin/notifications/{id}
