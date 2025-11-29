@@ -21,50 +21,74 @@ class TherapistController extends Controller
      * ============================================================
      * GET /admin/therapists?search=&active=true|false
      */
-    public function index(Request $request)
-    {
-        $base = Therapist::with('user')
-            ->withCount('sessions');
+   public function index(Request $request)
+{
+    $with = ['user'];
 
-        // 🔍 search
-        $base->when($request->filled('search'), function ($q) use ($request) {
-            $s = $request->search;
+    if ($request->boolean('with_availability')) {
+        // لازم يكون عندك علاقة schedules على موديل Therapist
+        $with[] = 'schedules';
+        // ولو حابة كمان timeoffs:
+        // $with[] = 'timeoffs';
+    }
 
-            $q->where(function ($x) use ($s) {
-                $x->whereHas('user', function ($u) use ($s) {
-                    $u->where('name', 'like', "%{$s}%")
-                      ->orWhere('email', 'like', "%{$s}%")
-                      ->orWhere('phone', 'like', "%{$s}%");
-                })
-                ->orWhere('id', $s);
-            });
+    $base = Therapist::with($with)
+        ->withCount('sessions');
+
+    // 🔍 search
+    $base->when($request->filled('search'), function ($q) use ($request) {
+        $s = $request->search;
+
+        $q->where(function ($x) use ($s) {
+            $x->whereHas('user', function ($u) use ($s) {
+                $u->where('name', 'like', "%{$s}%")
+                  ->orWhere('email', 'like', "%{$s}%")
+                  ->orWhere('phone', 'like', "%{$s}%");
+            })
+            ->orWhere('id', $s); // search by therapist_id
         });
+    });
 
-        // Active filter
-        $base->when($request->filled('active'), function ($q) use ($request) {
-            $q->where(
-                'is_active',
-                filter_var($request->active, FILTER_VALIDATE_BOOLEAN)
-            );
-        });
+    // Active filter
+    $base->when($request->filled('active'), function ($q) use ($request) {
+        $q->where(
+            'is_active',
+            filter_var($request->active, FILTER_VALIDATE_BOOLEAN)
+        );
+    });
 
-        // -----------------------
-        // COUNTS FOR DASHBOARD
-        // -----------------------
-        $counts = [
-            'all'      => (clone $base)->count(),
-            'active'   => (clone $base)->where('is_active', 1)->count(),
-            'inactive' => (clone $base)->where('is_active', 0)->count(),
-        ];
+    // -----------------------
+    // COUNTS FOR DASHBOARD
+    // -----------------------
+    $counts = [
+        'all'      => (clone $base)->count(),
+        'active'   => (clone $base)->where('is_active', 1)->count(),
+        'inactive' => (clone $base)->where('is_active', 0)->count(),
+    ];
 
-        // PAGINATION
-        $list = $base->orderByDesc('id')->paginate(20);
+    // -----------------------
+    // LIST: PAGINATED أو ALL
+    // -----------------------
+
+    // لو ?all=1 → رجّع كل الدكاترة بدون paginate
+    if ($request->boolean('all')) {
+        $list = $base->orderByDesc('id')->get();
 
         return response()->json([
             'data'   => $list,
             'counts' => $counts,
         ]);
     }
+
+    // الإفتراضي: paginate(20)
+    $list = $base->orderByDesc('id')->paginate(20);
+
+    return response()->json([
+        'data'   => $list,
+        'counts' => $counts,
+    ]);
+}
+
 
 
     /**
