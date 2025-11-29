@@ -35,14 +35,14 @@ class ChatMessageController extends Controller
     /**
      * Store a new message in a chat.
      */
-    public function store(StoreChatMessageRequest $request, Chat $chat): ChatMessageResource
+  public function store(StoreChatMessageRequest $request, Chat $chat): ChatMessageResource
 {
     $this->authorize('message', $chat);
 
     $user       = $request->user();
     $senderRole = $this->resolveSenderRole($user);
-    $path = $this->storeAttachmentIfExists($request, $chat);
-    $type = $this->detectMessageType($request, $path);
+    $path       = $this->storeAttachmentIfExists($request, $chat);
+    $type       = $this->detectMessageType($request, $path);
 
     $msg = ChatMessage::create([
         'chat_id'         => $chat->id,
@@ -55,14 +55,12 @@ class ChatMessageController extends Controller
         'replied_to_id'   => $request->input('replied_to_id'),
     ]);
 
-
-    // تحديث حالة الشات (pending / replied)
+    // 🟢 تحديث حالة الشات (pending / replied)
     $this->updateChatStatusOnNewMessage($chat, $senderRole);
 
     // 🟣 Auto Notification: لو اللي بيرد دكتور أو أدمن → نبعت إشعار لليوزر
     if (in_array($senderRole, ['therapist', 'admin'], true) && $chat->user_id) {
 
-        // نحدّد اسم المرسل اللي هيظهر في النوتيفيكيشن
         $fromName = $senderRole === 'therapist'
             ? optional($chat->therapist?->user)->name
             : 'Support';
@@ -77,6 +75,33 @@ class ChatMessageController extends Controller
         );
     }
 
+    // ✅ Auto Read: لو المرسل دكتور/أدمن → اعتبر آخر رسالة من الكلاينت اتقرأت
+    if (in_array($senderRole, ['therapist', 'admin'], true)) {
+        $lastClientMsg = $chat->messages()
+            ->where('sender_role', 'client')
+            ->latest('id')
+            ->first();
+
+        if ($lastClientMsg) {
+            ChatRead::updateOrCreate(
+                [
+                    'message_id' => $lastClientMsg->id,
+                    'user_id'    => $user->id, // الدكتور أو الأدمن
+                ],
+                [
+                    'read_at'    => now(),
+                ]
+            );
+
+            // نبث event عشان الـ UI يحدّث حالة الرسالة
+            broadcast(new MessageRead(
+                $chat->id,
+                $lastClientMsg->id,
+                $user->id
+            ))->toOthers();
+        }
+    }
+
     // بث الرسالة في الريل تايم
     broadcast(new MessageSent($msg))->toOthers();
 
@@ -84,6 +109,7 @@ class ChatMessageController extends Controller
         $msg->loadMissing('reads', 'sender')
     );
 }
+
 
     /**
      * Mark a specific message as read by current user.

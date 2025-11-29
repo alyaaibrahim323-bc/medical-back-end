@@ -13,42 +13,59 @@ class Therapist extends Model
     ];
 
     protected $casts = [
-        'specialty' => 'array', // {"en": "...", "ar": "..."}
-        'bio'       => 'array',
-        'is_active' => 'boolean',
-        'rating_avg'=> 'float',
+        'specialty'      => 'array',  // {"en": "...", "ar": "..."}
+        'bio'            => 'array',
+        'is_active'      => 'boolean',
+        'rating_avg'     => 'float',
         'is_chat_online' => 'boolean',
         'last_online_at' => 'datetime',
     ];
 
-public function user()
-{
-    return $this->belongsTo(\App\Models\User::class, 'user_id');
-}
-    public function schedules() { return $this->hasMany(TherapistSchedule::class); }
-    public function timeoffs()  { return $this->hasMany(TherapistTimeoff::class); }
-
-    // Accessors تُرجّع النص حسب اللغة الحالية (Accept-Language)
-    protected function specialtyText(): Attribute {
-        return Attribute::get(function () {
-            $loc = app()->getLocale() ?: 'en';
-            $arr = $this->specialty ?? [];
-            return $arr[$loc] ?? $arr['en'] ?? null;
-        });
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
     }
-    protected function bioText(): Attribute {
-        return Attribute::get(function () {
-            $loc = app()->getLocale() ?: 'en';
-            $arr = $this->bio ?? [];
-            return $arr[$loc] ?? $arr['en'] ?? null;
-        });
 
+    public function schedules()
+    {
+        return $this->hasMany(TherapistSchedule::class);
+    }
+
+    public function timeoffs()
+    {
+        return $this->hasMany(TherapistTimeoff::class);
     }
 
     public function sessions()
-{
-    return $this->hasMany(TherapySession::class);
-}
+    {
+        return $this->hasMany(TherapySession::class);
+    }
 
+    // ✅ Accessor: specialtyText
+    public function getSpecialtyTextAttribute(): ?string
+    {
+        $loc = app()->getLocale() ?: 'en';
+        $arr = $this->specialty ?? [];
+
+        if (is_array($arr)) {
+            return $arr[$loc] ?? ($arr['en'] ?? reset($arr));
+        }
+
+        // لو مكتوب string مش JSON
+        return $arr ?: null;
+    }
+
+    // ✅ Accessor: bioText
+    public function getBioTextAttribute(): ?string
+    {
+        $loc = app()->getLocale() ?: 'en';
+        $arr = $this->bio ?? [];
+
+        if (is_array($arr)) {
+            return $arr[$loc] ?? ($arr['en'] ?? reset($arr));
+        }
+
+        return $arr ?: null;
+    }
 }
 

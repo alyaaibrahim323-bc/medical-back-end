@@ -4,8 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rules\Password as PasswordRule;
-USE Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rules\Password;
 
 class UserProfileController extends Controller
 {
@@ -14,40 +13,59 @@ class UserProfileController extends Controller
      */
     public function show(Request $r)
     {
-        $user = $r->user(); // user مسجّل دخول
+        $user = $r->user();
 
         return response()->json([
-            'data' => $user,
+            'data' => $this->transformUser($user),
         ]);
     }
 
     /**
-     * تحديث الاسم / الإيميل / التليفون / الصورة.
+     * تحديث الاسم / الإيميل / التليفون.
      */
- public function update(Request $r)
-{
-    $user = $r->user();
+    public function updateProfileInfo(Request $r)
+    {
+        $user = $r->user();
 
-    $data = $r->validate([
-        'name'   => ['sometimes','string','max:100'],
-        'email'  => ['sometimes','email','max:255'],
-        'phone'  => ['sometimes','string','max:30'],
-        'avatar' => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
-    ]);
+        $data = $r->validate([
+            'name'  => ['sometimes','string','max:100'],
+            'email' => ['sometimes','email','max:255'],
+            'phone' => ['sometimes','string','max:30'],
+            // لو حابة تخليهم يغيروا اللغة من البروفايل:
+            // 'preferred_locale' => ['sometimes','in:en,ar'],
+        ]);
 
-    if ($r->hasFile('avatar')) {
-        $avatarPath     = $r->file('avatar')->store('avatars/users', 'public');
-        $data['avatar'] = $avatarPath;
+        $user->update($data);
+
+        return response()->json([
+            'message' => 'Profile updated.',
+            'data'    => $this->transformUser($user->fresh()),
+        ]);
     }
 
-    $user->update($data);
+    /**
+     * تحديث الصورة الشخصية.
+     */
+    public function updateAvatar(Request $r)
+    {
+        $user = $r->user();
 
-    return response()->json([
-        'data' => $user->fresh(),
-    ]);
-}
+        $data = $r->validate([
+            'avatar' => ['required','image','mimes:jpg,jpeg,png,webp','max:2048'],
+        ]);
 
+        $avatarPath = $r->file('avatar')->store('avatars/users', 'public');
 
+        $user->update([
+            'avatar' => $avatarPath,
+        ]);
+
+        return response()->json([
+            'message'    => 'Avatar updated successfully.',
+            'avatar'     => $avatarPath,
+            'avatar_url' => $this->avatarUrl($avatarPath),
+        ]);
+    }
 
     /**
      * تغيير الباسورد.
@@ -60,11 +78,11 @@ class UserProfileController extends Controller
             'current_password' => ['required','current_password:sanctum'],
             'password' => [
                 'required','confirmed',
-                PasswordRule::min(8)->mixedCase()->numbers()->symbols()->uncompromised(),
+                Password::min(8)->mixedCase()->numbers()->symbols()->uncompromised(),
             ],
         ]);
 
-        // الباسورد الجديد مايبقاش نفس القديم
+        // ممنوع الباسورد الجديد = القديم
         if (Hash::check($data['password'], $user->password)) {
             return response()->json([
                 'message' => 'New password must be different from current password.',
@@ -75,7 +93,7 @@ class UserProfileController extends Controller
             'password' => Hash::make($data['password']),
         ])->save();
 
-        // نلغي كل التوكنز القديمة (ما عدا الحالي)
+        // لو بتستخدمي Sanctum: نلغى التوكينات القديمة (ماعدا الحالي)
         if (method_exists($user, 'tokens')) {
             $currentTokenId = optional($r->user()->currentAccessToken())->id;
 
@@ -87,5 +105,34 @@ class UserProfileController extends Controller
         return response()->json([
             'message' => 'Password updated successfully.',
         ]);
+    }
+
+    /**
+     * Helper: توحيد شكل بيانات اليوزر الراجعة فى الـ API.
+     */
+    protected function transformUser($user): array
+    {
+        $avatarPath = $user->avatar;
+
+        return [
+            'id'               => $user->id,
+            'name'             => $user->name,
+            'email'            => $user->email,
+            'phone'            => $user->phone,
+            'preferred_locale' => $user->preferred_locale,
+            'status'           => $user->status,
+            'avatar'           => $avatarPath,
+            'avatar_url'       => $this->avatarUrl($avatarPath),
+            'email_verified_at'=> $user->email_verified_at,
+            // لو محتاجة تضيفى في المستقبل حقول زيادة (role, etc...) ضيفيها هنا
+        ];
+    }
+
+    /**
+     * Helper: بناء لينك الصورة من مسار التخزين.
+     */
+    protected function avatarUrl(?string $path): ?string
+    {
+        return $path ? asset('storage/'.$path) : null;
     }
 }
