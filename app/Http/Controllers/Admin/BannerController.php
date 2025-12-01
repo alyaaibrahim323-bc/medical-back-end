@@ -48,7 +48,7 @@ class BannerController extends Controller
         $data = $r->validate([
             'status'     => ['nullable','in:active,inactive'],
             'sort_order' => ['nullable','integer','min:0'],
-            'image'      => ['required','image','mimes:jpg,jpeg,png,webp','max:2048'],
+            // 'image'      => ['required','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
         echo $data;
         $path = $r->file('image')->store('banners', 'public');

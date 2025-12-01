@@ -4,7 +4,7 @@ return [
 
     'paths' => [
         'api/*',
-        'broadcasting/*',   // ✔️ مهم
+        'broadcasting/*',
         'sanctum/csrf-cookie',
     ],
 
