@@ -72,7 +72,6 @@ class AdminSettingsController extends Controller
             'avatar' => ['required','image','mimes:jpg,jpeg,png,webp','max:2048'],
         ]);
 
-        // امسح القديمة لو موجودة (اختياري)
         if ($admin->avatar && Storage::disk('public')->exists($admin->avatar)) {
             Storage::disk('public')->delete($admin->avatar);
         }

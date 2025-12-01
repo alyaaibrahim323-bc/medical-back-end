@@ -55,11 +55,9 @@ class ProfileController extends Controller
             'currency'         => ['sometimes','string','size:3'],
             'is_active'        => ['sometimes','boolean'],
 
-            // الحقول المشتركة (User)
             'name'   => ['sometimes','string','max:100'],
             'email'  => ['sometimes','email','max:255'],
             'phone'  => ['sometimes','string','max:30'],
-            // ✅ مفيش avatar هنا
         ]);
 
         // نحول النصوص لـ JSON زى ما كنتى عاملة

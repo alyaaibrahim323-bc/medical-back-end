@@ -32,7 +32,7 @@ class UserObserver
                 'bio'         => ['en' => ''],
                 'price_cents' => 0,
                 'currency'    => 'EGP',
-                'is_active'   => true, // لحد ما الأدمن يفعّله
+                'is_active'   => true,
             ]
         );
     }
