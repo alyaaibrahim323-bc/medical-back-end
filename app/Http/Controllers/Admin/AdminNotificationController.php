@@ -63,9 +63,9 @@ class AdminNotificationController extends Controller
 
     $notifications = $q->paginate(20);
 
-    return response()->json([
-        'data'   => NotificationResource::collection($notifications),
-        'counts' => $counts,
+    return NotificationResource::collection($notifications)
+    ->additional([
+        'counts' => $counts
     ]);
 }
 
