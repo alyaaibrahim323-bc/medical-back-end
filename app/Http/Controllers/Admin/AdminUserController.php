@@ -43,7 +43,7 @@ class AdminUserController extends Controller
 
         // Status filter
         $base->when($r->filled('status'), function ($q) use ($r) {
-            if (in_array($r->status, ['active','blocked','inactive'], true)) {
+            if (in_array($r->status, ['active','inactive'], true)) {
                 $q->where('status', $r->status);
             }
         });
@@ -54,7 +54,6 @@ class AdminUserController extends Controller
         $counts = [
             'all'     => (clone $base)->count(),
             'active'  => (clone $base)->where('status','active')->count(),
-            'blocked' => (clone $base)->where('status','blocked')->count(),
             'inactive'=> (clone $base)->where('status','inactive')->count(),
         ];
 
@@ -80,7 +79,7 @@ class AdminUserController extends Controller
             'phone'    => ['nullable','string','max:30'],
             'password' => ['required','string','min:8'],
             'role'     => ['required', Rule::in(['admin','doctor'])],
-            'status'   => ['nullable', Rule::in(['active','blocked','inactive'])],
+            'status'   => ['nullable', Rule::in(['active','inactive'])],
         ]);
 
         $user = User::create([
@@ -128,7 +127,7 @@ class AdminUserController extends Controller
             'name'      => ['sometimes','string','max:120'],
             'email'     => ['sometimes','email', Rule::unique('users','email')->ignore($user->id)],
             'phone'     => ['sometimes','string','max:30'],
-            'status'    => ['sometimes', Rule::in(['active','blocked','inactive'])],
+            'status'    => ['sometimes', Rule::in(['active','inactive'])],
             'roles'     => ['sometimes','array'],
             'roles.*'   => ['string'],
             'password'  => ['sometimes','string','min:8'],

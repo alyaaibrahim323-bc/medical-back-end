@@ -9,15 +9,39 @@ use Illuminate\Validation\Rules\Password;
 
 class ProfileController extends Controller
 {
+    /**
+     * GET /doctor/me/profile
+     * يرجع بيانات الثيرابست + اليوزر (وفيها الـ avatar)
+     */
     public function show(Request $r)
     {
-        // نرجع بيانات الـ therapist مع اليوزر (وفيه الـ avatar)
         $t = $r->user()->therapist()->with('user')->firstOrFail();
 
-        return response()->json(['data' => $t]);
+        return response()->json([
+            'data' => $t,
+        ]);
     }
 
-    public function update(Request $r)
+    /**
+     * ✅ API 1: تعديل بيانات الدكتور (من غير الصورة)
+     * PATCH /doctor/me/profile
+     *
+     * Body (JSON):
+     * {
+     *   "name": "...",
+     *   "email": "...",
+     *   "phone": "...",
+     *   "bio": "... أو {\"en\":\"...\",\"ar\":\"...\"}",
+     *   "specialty": "... أو JSON",
+     *   "years_experience": 5,
+     *   "languages": ["ar","en"],
+     *   "certificates": [...],
+     *   "price_cents": 50000,
+     *   "currency": "EGP",
+     *   "is_active": true
+     * }
+     */
+    public function updateProfileData(Request $r)
     {
         $t = $r->user()->therapist()->firstOrFail();
 
@@ -35,12 +59,10 @@ class ProfileController extends Controller
             'name'   => ['sometimes','string','max:100'],
             'email'  => ['sometimes','email','max:255'],
             'phone'  => ['sometimes','string','max:30'],
-
-            // ✅ صورة البروفايل
-            'avatar' => ['sometimes','image','mimes:jpg,jpeg,png,webp','max:2048'],
+            // ✅ مفيش avatar هنا
         ]);
 
-        // نحول النصوص لـ JSON زي ما كنتي عاملة
+        // نحول النصوص لـ JSON زى ما كنتى عاملة
         foreach (['bio','specialty'] as $k) {
             if (array_key_exists($k, $data) && is_string($data[$k])) {
                 $data[$k] = ['en' => $data[$k]];
@@ -52,12 +74,6 @@ class ProfileController extends Controller
         $userData      = array_intersect_key($data, array_flip($userFields));
         $therapistData = array_diff_key($data, array_flip($userFields));
 
-        // ✅ رفع الصورة لو موجودة
-        if ($r->hasFile('avatar')) {
-            $avatarPath = $r->file('avatar')->store('avatars/doctors', 'public');
-            $userData['avatar'] = $avatarPath;
-        }
-
         if (!empty($therapistData)) {
             $t->update($therapistData);
         }
@@ -67,13 +83,46 @@ class ProfileController extends Controller
         }
 
         return response()->json([
-            'data' => $t->fresh('user'), // يرجع therapist + user بالـ avatar الجديد
+            'message' => 'Profile updated successfully.',
+            'data'    => $t->fresh('user'),
         ]);
     }
 
+    /**
+     * ✅ API 2: رفع / تعديل صورة البروفايل فقط
+     * POST /doctor/me/profile/avatar
+     * Content-Type: multipart/form-data
+     * Fields:
+     *   avatar: file(jpg/jpeg/png/webp)
+     */
+    public function updateAvatar(Request $r)
+    {
+        $t = $r->user()->therapist()->firstOrFail();
+        $user = $r->user();
+
+        $data = $r->validate([
+            'avatar' => ['required','image','mimes:jpg,jpeg,png,webp','max:2048'],
+        ]);
+
+        $avatarPath = $r->file('avatar')->store('avatars/doctors', 'public');
+
+        $user->update([
+            'avatar' => $avatarPath,
+        ]);
+
+        return response()->json([
+            'message' => 'Avatar updated successfully.',
+            'data'    => $t->fresh('user'), // therapist + user بالـ avatar الجديد
+        ]);
+    }
+
+    /**
+     * تغيير الباسورد للدكتور
+     * PATCH /doctor/me/profile/password
+     */
     public function updatePassword(Request $r)
     {
-        $user = $r->user(); // دكتور مسجّل دخول
+        $user = $r->user();
 
         $data = $r->validate([
             'current_password' => ['required','current_password:sanctum'],
@@ -103,6 +152,8 @@ class ProfileController extends Controller
                 ->delete();
         }
 
-        return response()->json(['message' => 'Password updated successfully.']);
+        return response()->json([
+            'message' => 'Password updated successfully.',
+        ]);
     }
 }

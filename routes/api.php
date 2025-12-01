@@ -213,9 +213,10 @@ Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(funct
 });
 
 Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(function () {
-    Route::get  ('/profile', [ProfileController::class,'show']);
-    Route::patch('/profile', [ProfileController::class,'update']);
-    Route::patch('/password',[ProfileController::class,'updatePassword']); // ← جديد
+    Route::get('/profile',             [ProfileController::class, 'show']);
+    Route::patch('/profile',         [ProfileController::class, 'updateProfileData']);
+    Route::post('/profile/avatar',     [ProfileController::class, 'updateAvatar']);
+    Route::patch('/profile/password',  [ProfileController::class, 'updatePassword']);
 
 
     Route::get   ('/single-session',         [SingleSessionManageController::class, 'show']);
