@@ -9,10 +9,12 @@ use Illuminate\Http\Request;
 
 class DoctorChatController extends Controller
 {
-   public function index(Request $request)
+ public function index(Request $request)
 {
-    $user = $request->user();
-    $therapistId = optional($user->therapist)->id;
+    $user        = $request->user();
+    $therapist   = optional($user->therapist);
+    $therapistId = $therapist->id;
+    $doctorUserId = $user->id; // 👈 ده اللى بيتخزن فى chat_reads.user_id
 
     if (!$therapistId) {
         return response()->json([
@@ -21,20 +23,21 @@ class DoctorChatController extends Controller
     }
 
     // ============================================
-    // Counts: unread / read / all
+    // Counts: all / newest(unread) / oldest(read)
     // ============================================
     $base = Chat::where('therapist_id', $therapistId)
         ->with(['messages.reads'])
         ->get();
 
-    // unread لو فيه message واحدة على الأقل مش متقريّة من الثيرابست
-    $unreadCount = $base->filter(function ($chat) use ($therapistId) {
-        return $chat->messages->contains(function ($msg) use ($therapistId) {
-            return !$msg->reads->where('user_id', $therapistId)->count();
+    // 👇 chat يعتبر UNREAD لو فيه message واحدة على الأقل مش متقريّة من الـ doctor user
+    $unreadCount = $base->filter(function ($chat) use ($doctorUserId) {
+        return $chat->messages->contains(function ($msg) use ($doctorUserId) {
+            // لو مفيش أى record فى reads بنفس user_id → الرسالة دى مش مقروءة من الدكتور
+            return !$msg->reads->where('user_id', $doctorUserId)->count();
         });
     })->count();
 
-    // read = chats that have zero unread messages
+    // read = كل الرسائل في الشات متقريّة (مفيش أى unread)
     $readCount = $base->count() - $unreadCount;
 
     $counts = [
@@ -44,38 +47,43 @@ class DoctorChatController extends Controller
     ];
 
     // ============================================
-    // Query الرئيسية
+    // Query الرئيسية لقائمة الشات
     // ============================================
-    $q = Chat::with(['session', 'user'])
+    $q = Chat::with([
+            'session',
+            'user',             // client
+            'therapist.user',   // doctor info
+            'lastMessage',      // لو ضفنا الريليشن دى فى الموديل
+        ])
         ->where('therapist_id', $therapistId);
 
     // tab filter
     if ($tab = $request->query('tab')) {
 
         if ($tab === 'newest') {
-            // unread only
-            $q->whereHas('messages', function ($m) use ($therapistId) {
-                $m->whereDoesntHave('reads', function ($r) use ($therapistId) {
-                    $r->where('user_id', $therapistId);
+            // 👈 Chats فيها على الأقل message واحدة مش متقريّة من الدكتور
+            $q->whereHas('messages', function ($m) use ($doctorUserId) {
+                $m->whereDoesntHave('reads', function ($r) use ($doctorUserId) {
+                    $r->where('user_id', $doctorUserId);
                 });
             });
         }
 
         if ($tab === 'oldest') {
-            // read only (all messages read)
-            $q->whereDoesntHave('messages', function ($m) use ($therapistId) {
-                $m->whereDoesntHave('reads', function ($r) use ($therapistId) {
-                    $r->where('user_id', $therapistId);
+            // 👈 Chats مفيهاش ولا message "unread" للدكتور
+            $q->whereDoesntHave('messages', function ($m) use ($doctorUserId) {
+                $m->whereDoesntHave('reads', function ($r) use ($doctorUserId) {
+                    $r->where('user_id', $doctorUserId);
                 });
             });
         }
     }
 
-    // search
+    // search by client name / email
     if ($search = $request->query('search')) {
         $q->whereHas('user', function ($u) use ($search) {
             $u->where('name', 'like', "%{$search}%")
-              ->orWhere('email','like', "%{$search}%");
+              ->orWhere('email', 'like', "%{$search}%");
         });
     }
 
@@ -85,6 +93,7 @@ class DoctorChatController extends Controller
         'counts' => $counts,
     ]);
 }
+
 
 
     public function show(Request $request, Chat $chat)

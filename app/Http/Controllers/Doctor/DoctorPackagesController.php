@@ -9,14 +9,38 @@ use Illuminate\Http\Request;
 class DoctorPackagesController extends Controller
 {
     public function index(Request $r)
-    {
-        $therapistId = auth()->user()->therapist->id; // تأكدي أن علاقة user->therapist موجودة
-        $q = Package::ownedByDoctor($therapistId)
-            ->when($r->filled('active'), fn($x)=>$x->where('is_active', filter_var($r->active, FILTER_VALIDATE_BOOLEAN)))
-            ->orderByDesc('id');
+{
+    $therapistId = auth()->user()->therapist->id;
 
-        return response()->json(['data'=>$q->paginate(20)]);
-    }
+    // 👈 base query من غير فلتر active
+    $base = Package::ownedByDoctor($therapistId);
+
+    // ✅ الأعداد لكل تاب
+    $counts = [
+        'all'      => (clone $base)->count(),
+        'active'   => (clone $base)->where('is_active', true)->count(),
+        'inactive' => (clone $base)->where('is_active', false)->count(),
+    ];
+
+    // بعدين نطبّق الفلتر الحالي للتاب اللى الدكتور واقف عليه
+    $q = clone $base;
+
+    $q->when(
+        $r->filled('active'),
+        fn($x) => $x->where(
+            'is_active',
+            filter_var($r->active, FILTER_VALIDATE_BOOLEAN)
+        )
+    )->orderByDesc('id');
+
+    $list = $q->paginate(20);
+
+    return response()->json([
+        'data'   => $list,
+        'counts' => $counts,
+    ]);
+}
+
 
     public function store(Request $r)
     {

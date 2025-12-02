@@ -13,30 +13,50 @@ class DoctorClientsController extends Controller
     // قائمة كل المشتركين في باكيدجات هذا الدكتور
     // فلاتر اختيارية: ?package_id= & ?active=true/false & ?q=اسم_العميل/الإيميل
     public function subscriptions(Request $r)
-    {
-        $therapistId = $r->user()->therapist->id;
+{
+    $therapistId = $r->user()->therapist->id;
 
-        $q = UserPackage::query()
-            ->with([
-                'user:id,name,email,phone',
-                'package:id,name,sessions_count,session_duration_min,price_cents,currency',
-                'therapist:id,user_id', // للاكتمال
-                'redemptions:id,user_package_id,therapy_session_id,redeemed_at'
-            ])
-            ->where('therapist_id', $therapistId)
-            ->when($r->filled('package_id'), fn($x)=>$x->where('package_id', $r->integer('package_id')))
-            ->when($r->filled('active'), function ($x) use ($r) {
-                $bool = filter_var($r->active, FILTER_VALIDATE_BOOLEAN);
-                $x->where('is_active', $bool);
-            })
-            ->when($r->filled('q'), function ($x) use ($r) {
-                $kw = '%'.trim($r->q).'%';
-                $x->whereHas('user', fn($u)=>$u->where('name','like',$kw)->orWhere('email','like',$kw));
-            })
-            ->orderByDesc('id');
+    // 👈 base query (package_id + q فقط)
+    $base = UserPackage::query()
+        ->with([
+            'user:id,name,email,phone',
+            'package:id,name,sessions_count,session_duration_min,price_cents,currency',
+            'therapist:id,user_id',
+            'redemptions:id,user_package_id,therapy_session_id,redeemed_at'
+        ])
+        ->where('therapist_id', $therapistId)
+        ->when($r->filled('package_id'), fn($x) => $x->where('package_id', $r->integer('package_id')))
+        ->when($r->filled('q'), function ($x) use ($r) {
+            $kw = '%'.trim($r->q).'%';
+            $x->whereHas('user', fn($u) =>
+                $u->where('name','like',$kw)->orWhere('email','like',$kw)
+            );
+        });
 
-        return UserPackageResource::collection($q->paginate(20));
-    }
+    // ✅ الأعداد (كلها / Active / Inactive)
+    $counts = [
+        'all'      => (clone $base)->count(),
+        'active'   => (clone $base)->where('is_active', true)->count(),
+        'inactive' => (clone $base)->where('is_active', false)->count(),
+    ];
+
+    // 👇 دلوقتي نطبّق فلتر active حسب التاب المفتوح
+    $q = clone $base;
+
+    $q->when($r->filled('active'), function ($x) use ($r) {
+        $bool = filter_var($r->active, FILTER_VALIDATE_BOOLEAN);
+        $x->where('is_active', $bool);
+    })
+    ->orderByDesc('id');
+
+    $paginated = $q->paginate(20);
+
+    // نرجعها كـ Resource + counts فى الـ meta
+    return UserPackageResource::collection($paginated)->additional([
+        'counts' => $counts,
+    ]);
+}
+
 
     // تفاصيل اشتراك محدد
     public function subscriptionShow(Request $r, int $id)

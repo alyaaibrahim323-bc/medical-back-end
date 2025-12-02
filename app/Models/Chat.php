@@ -3,12 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\{BelongsTo, HasMany};
+use Illuminate\Database\Eloquent\Relations\{BelongsTo, HasMany,HasOne};
 
 class Chat extends Model
 {
     protected $fillable = [
-        'type',                 // 🟩 أضفناها
+        'type',
         'therapy_session_id',
         'user_id',
         'therapist_id',
@@ -45,5 +45,10 @@ class Chat extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(ChatMessage::class);
+    }
+
+      public function lastMessage(): HasOne
+    {
+        return $this->hasOne(ChatMessage::class)->latestOfMany();
     }
 }
