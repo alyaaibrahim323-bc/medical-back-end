@@ -12,7 +12,7 @@ Broadcast::channel('chat.{chatId}', function ($user, int $chatId) {
 
     $role = $user->role; // من عمود users.role لو عندك
 
-    if ($role === 'client') {
+    if ($role === 'user') {
         return Chat::where('id', $chatId)
             ->where('user_id', $user->id)
             ->exists();
