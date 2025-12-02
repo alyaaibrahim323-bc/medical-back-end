@@ -13,6 +13,8 @@ use App\Models\ChatRead;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Services\NotificationService;
+use Illuminate\Support\Facades\Log;
+
 
 
 class ChatMessageController extends Controller
@@ -161,18 +163,52 @@ class ChatMessageController extends Controller
     /**
      * Resolve logical sender role string.
      */
-    protected function resolveSenderRole($user): string
-    {
-        if ($user->hasRole('doctor')) {
-            return 'therapist';
-        }
+    protected function resolveSenderRole(\App\Models\User $user): string
+{
+    // log debugging (تقدري تمسحيه بعد ما تتأكدي)
+    Log::info('RESOLVE SENDER ROLE', [
+        'user_id' => $user->id,
+        'roles'   => $user->getRoleNames(),
+        'db_role' => $user->role ?? null,
+        'has_therapist' => (bool) $user->therapist,
+    ]);
 
-        if ($user->hasRole('admin')) {
-            return 'admin';
-        }
+    // 1) Spatie roles لو إنتِ مستخدماها
+    if ($user->hasRole('admin')) {
+        return 'admin';
+    }
 
+    if ($user->hasRole('doctor')) {
+        // فى الداتا انتِ بتسميها therapist جوّه الشات
+        return 'therapist';
+    }
+
+    if ($user->hasRole('client')) {
         return 'client';
     }
+
+    // 2) fallback على عمود users.role لو لسه بتستعمليه
+    if (isset($user->role)) {
+        if ($user->role === 'admin') {
+            return 'admin';
+        }
+        if (in_array($user->role, ['doctor', 'therapist'], true)) {
+            return 'therapist';
+        }
+        if ($user->role === 'client') {
+            return 'client';
+        }
+    }
+
+    // 3) fallback أخير: لو عنده relationship therapist يبقى دكتور
+    if ($user->therapist) {
+        return 'therapist';
+    }
+
+    // 4) آخر اختيار: اعتبره client
+    return 'client';
+}
+
 
     /**
      * Store attachment if present and return path or null.
