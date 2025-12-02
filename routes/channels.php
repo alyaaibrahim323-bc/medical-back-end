@@ -6,25 +6,19 @@ use Illuminate\Support\Facades\Log;
 
 // ============ CHAT CHANNEL ============
 Broadcast::channel('chat.{chatId}', function ($user, int $chatId) {
-    Log::info('CHAT BROADCAST AUTH CHECK', [
-        'auth_user_id' => optional($user)->id,
-        'chat_id'      => $chatId,
-        'roles'        => $user ? $user->getRoleNames() : [],
-    ]);
-
     if (! $user) {
         return false;
     }
 
-    // client
-    if ($user->hasRole('client')) {
+    $role = $user->role; // من عمود users.role لو عندك
+
+    if ($role === 'client') {
         return Chat::where('id', $chatId)
             ->where('user_id', $user->id)
             ->exists();
     }
 
-    // doctor
-    if ($user->hasRole('doctor')) {
+    if ($role === 'doctor') {
         $therapistId = optional($user->therapist)->id;
         if (! $therapistId) {
             return false;
@@ -35,13 +29,13 @@ Broadcast::channel('chat.{chatId}', function ($user, int $chatId) {
             ->exists();
     }
 
-    // admin
-    if ($user->hasRole('admin')) {
+    if ($role === 'admin') {
         return true;
     }
 
     return false;
 });
+
 
 // ============ NOTIFICATIONS CHANNEL ============
 Broadcast::channel('notifications.user.{userId}', function ($user, int $userId) {
