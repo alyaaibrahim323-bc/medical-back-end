@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Models\TherapySession;
 use App\Models\Package;
+use App\Models\UserPackage;
 use App\Services\PaymobService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,19 +15,29 @@ use App\Services\NotificationService;
 
 class PaymentsController extends Controller
 {
-    /**
-     * POST /payments
+   /**
+     * POST api/payments
      * body:
      *   purpose: single_session | package
      *   id:      therapy_session_id OR package_id
-     *   billing: {...}
+     *
+     * مثال:
+     *  {
+     *    "purpose": "single_session",
+     *    "id": 12
+     *  }
+     *
+     *  {
+     *    "purpose": "package",
+     *    "id": 3
+     *  }
      */
     public function create(Request $r, PaymobService $paymob)
     {
         $data = $r->validate([
             'purpose' => ['required','in:single_session,package'],
             'id'      => ['required','integer'],
-            'billing' => ['required','array'],
+            // 👈 مفيش billing فى الـ request
         ]);
 
         $user = $r->user();
@@ -50,7 +61,6 @@ class PaymentsController extends Controller
                 return response()->json(['message'=>'Session not payable'], 422);
             }
 
-            // سعر الجلسة (ممكن تعدلى هنا لو فيه SingleSessionOffer)
             $sessionFee = (int) ($session->therapist->price_cents ?? 0);
             $serviceFee = (int) config('fees.single_session_service_cents', 0);
             $amount     = $sessionFee + $serviceFee;
@@ -69,7 +79,7 @@ class PaymentsController extends Controller
             // شراء Package
             $package = Package::where('is_active', true)->findOrFail($data['id']);
 
-            $therapistId = $package->created_by_therapist_id; // ممكن يبقى null لو Global
+            $therapistId = $package->created_by_therapist_id;
 
             $basePrice = (int) $package->price_cents;
             $discount  = (float) ($package->discount_percent ?? 0);
@@ -93,7 +103,7 @@ class PaymentsController extends Controller
         }
 
         // =============================
-        // 2) لو MOCK → مفيش Paymob خالص
+        // 2) MOCK MODE → نجاح فورى بدون Paymob
         // =============================
         if (config('payments.mock')) {
             $reference = strtoupper(Str::random(10));
@@ -117,7 +127,8 @@ class PaymentsController extends Controller
                     'purpose'            => $data['purpose'],
                     'amount_cents'       => $amount,
                     'currency'           => 'EGP',
-                    'provider'           => 'mock', // 👈 مهم عشان تبقى عارفة إنه تيست
+                    // ⭐ خلى القيمة دى تماتش الـ ENUM عندك
+                    'provider'           => 'paymob', // أو خلى العمود يقبل 'mock'
                     'status'             => Payment::STATUS_PAID,
                     'reference'          => $reference,
                     'paid_at'            => now(),
@@ -127,7 +138,7 @@ class PaymentsController extends Controller
                 ]);
             });
 
-            // نطبق اللوچك العادى بعد الدفع
+            // نطبق البزنس لوجك بعد الدفع
             $this->applyBusinessLogicAfterPayment($payment);
 
             return response()->json([
@@ -138,13 +149,14 @@ class PaymentsController extends Controller
                     'amount_cents' => $payment->amount_cents,
                     'currency'     => $payment->currency,
                     'purpose'      => $payment->purpose,
-                    'paymob'       => null, // مفيش Paymob فى الموك
+                    'paymob'       => null,
                 ],
             ], 201);
         }
 
         // =============================
-        // 3) السيناريو الحقيقى مع Paymob (زى ما كان)
+        // 3) السيناريو الحقيقى مع Paymob
+        //    (من غير ما الفرونت يبعت billing)
         // =============================
         $reference = strtoupper(Str::random(10));
 
@@ -173,12 +185,8 @@ class PaymentsController extends Controller
             ]);
         });
 
-        // Paymob: auth → order → payment_key
-        $token   = $paymob->auth();
-        $order   = $paymob->createOrder($token, $amount, $payment->reference, []);
-        $orderId = $order['id'] ?? null;
-
-        $billing = array_merge([
+        // ⭐ نكوّن الـ billing جوه الباك إند من بيانات اليوزر
+        $billing = [
             'first_name'      => $user->name ?? 'User',
             'last_name'       => 'Customer',
             'email'           => $user->email,
@@ -192,12 +200,20 @@ class PaymentsController extends Controller
             'city'            => 'Cairo',
             'country'         => 'EG',
             'state'           => 'Cairo',
-        ], $data['billing']);
+        ];
+
+        // Paymob: auth → order → payment_key
+        $token   = $paymob->auth();
+        $order   = $paymob->createOrder($token, $amount, $payment->reference, []);
+        $orderId = $order['id'] ?? null;
 
         $pk = $paymob->paymentKey($token, $amount, $orderId, $billing);
 
         $payment->update([
             'provider_order_id' => (string) $orderId,
+            'payload'           => array_merge($payment->payload ?? [], [
+                'billing' => $billing,
+            ]),
         ]);
 
         return response()->json([
@@ -216,6 +232,143 @@ class PaymentsController extends Controller
             ],
         ], 201);
     }
+protected function applyBusinessLogicAfterPayment(Payment $payment): void
+{
+    /** @var NotificationService $notifications */
+    $notifications = app(NotificationService::class);
+
+    // 1) Single Session
+    if ($payment->purpose === Payment::PURPOSE_SINGLE_SESSION && $payment->therapy_session_id) {
+        $session = TherapySession::with('therapist.user')->find($payment->therapy_session_id);
+
+        if ($session && $payment->status === Payment::STATUS_PAID) {
+            $session->update([
+                'status' => TherapySession::STATUS_CONFIRMED,
+            ]);
+
+            $notifications->sendToUser(
+                $payment->user_id,
+                'payment_success',
+                [
+                    'amount' => $payment->amount_cents / 100,
+                    'item'   => 'Single session with ' . ($session->therapist->user->name ?? 'therapist'),
+                ]
+            );
+
+            $notifications->sendToUser(
+                $payment->user_id,
+                'session_upcoming',
+                [
+                    'doctor' => $session->therapist->user->name ?? 'therapist',
+                    'time'   => $session->scheduled_at->format('g:i A'),
+                ]
+            );
+        }
+
+        if ($session && $payment->status === Payment::STATUS_FAILED) {
+            $notifications->sendToUser(
+                $payment->user_id,
+                'payment_failed',
+                [
+                    'amount' => $payment->amount_cents / 100,
+                    'item'   => 'Single session',
+                ]
+            );
+        }
+
+        return;
+    }
+
+    // 2) Package
+    if ($payment->purpose === Payment::PURPOSE_PACKAGE) {
+
+        if ($payment->status === Payment::STATUS_FAILED) {
+            $notifications->sendToUser(
+                $payment->user_id,
+                'payment_failed',
+                [
+                    'amount' => $payment->amount_cents / 100,
+                    'item'   => 'Package',
+                ]
+            );
+            return;
+        }
+
+        if ($payment->status !== Payment::STATUS_PAID) {
+            return;
+        }
+
+        // لو عندك user_package_id موجود
+        if ($payment->user_package_id) {
+            $notifications->sendToUser(
+                $payment->user_id,
+                'payment_success',
+                [
+                    'amount' => $payment->amount_cents / 100,
+                    'item'   => 'Package',
+                ]
+            );
+            return;
+        }
+
+        $payData   = $payment->payload ?? [];
+        $packageId = $payData['package_id'] ?? null;
+
+        if (!$packageId) {
+            return;
+        }
+
+        /** @var Package|null $package */
+        $package = Package::find($packageId);
+        if (!$package) {
+            return;
+        }
+
+        $sessionsCount = $package->sessions_count;
+        $validityDays  = $package->validity_days;
+
+        $userPackage = UserPackage::create([
+            'user_id'        => $payment->user_id,
+            'package_id'     => $package->id,
+            'therapist_id'   => $payment->therapist_id,
+            'sessions_total' => $sessionsCount,
+            'sessions_used'  => 0,
+            'status'         => 'active',
+            'purchased_at'   => now(),
+            'expires_at'     => $validityDays ? now()->addDays($validityDays) : null,
+        ]);
+
+        $payment->update([
+            'user_package_id' => $userPackage->id,
+        ]);
+
+        // 👇 هنا التعديل المهم
+        // name ممكن تكون JSON (array) أو string
+        $rawName = $package->name;
+
+        if (is_array($rawName)) {
+            // لو متخزنة JSON
+            $nameEn = $rawName['en'] ?? null;
+            $nameAr = $rawName['ar'] ?? null;
+            $name   = $nameEn ?? $nameAr ?? reset($rawName);
+        } else {
+            $name = $rawName;
+        }
+
+        $itemLabel = trim('Package ' . ($name ?? ''));
+
+        $notifications->sendToUser(
+            $payment->user_id,
+            'payment_success',
+            [
+                'amount' => $payment->amount_cents / 100,
+                'item'   => $itemLabel,
+            ]
+        );
+    }
+}
+
+
 
     // ... باقى الكنترولر زى ما هو (webhook, fakeSuccess, applyBusinessLogicAfterPayment ...)
 }
