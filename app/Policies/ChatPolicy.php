@@ -46,7 +46,18 @@ class ChatPolicy
 
     // تعيين الشات لدكتور أو قفله → Admin بس
     public function assign(User $user, Chat $chat): bool
-    {
-        return $user->hasRole('admin');
+{
+    // لو متسجل له role فى Spatie
+    if ($user->hasRole('admin')) {
+        return true;
     }
+
+    // fallback على عمود users.role
+    if ($user->role === 'admin') {
+        return true;
+    }
+
+    return false;
+}
+
 }

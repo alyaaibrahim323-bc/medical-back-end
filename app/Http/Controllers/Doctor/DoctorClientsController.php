@@ -60,6 +60,7 @@ class DoctorClientsController extends Controller
 
     return UserPackageResource::collection($paginated)->additional([
         'counts' => $counts,
+
     ]);
 }
 

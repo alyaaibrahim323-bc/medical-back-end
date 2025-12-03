@@ -8,12 +8,13 @@ use Illuminate\Http\Request;
 
 class DoctorPackagesController extends Controller
 {
-    public function index(Request $r)
+ public function index(Request $r)
 {
     $therapistId = auth()->user()->therapist->id;
 
-    // 👈 base query من غير فلتر active
-    $base = Package::ownedByDoctor($therapistId);
+    // 👈 base query + عدد اليوزرز في كل باكيدج
+    $base = Package::ownedByDoctor($therapistId)
+        ->withCount('userPackages'); // NEW ✅
 
     // ✅ الأعداد لكل تاب
     $counts = [
@@ -40,6 +41,7 @@ class DoctorPackagesController extends Controller
         'counts' => $counts,
     ]);
 }
+
 
 
     public function store(Request $r)
