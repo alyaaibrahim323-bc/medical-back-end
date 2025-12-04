@@ -34,10 +34,10 @@ class AdminSubscriptionsReportController extends Controller
         ->when($r->filled('status'), fn($x)=>$x->where('status',$r->status))
         ->when($r->filled('id'), fn($x)=>$x->where('id', $r->id))
         ->orderByDesc('id');
-
-    return response()->json([
-        'data'   => UserPackageResource::collection($q->paginate(20)),
+ $paginated = $q->paginate(20);
+    return UserPackageResource::collection($paginated)->additional([
         'counts' => $counts,
+
     ]);
 }
 
