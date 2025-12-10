@@ -25,6 +25,7 @@ class homeController extends Controller
     }
     public function homeQuote()
         {
+            $quotes = Quote::active()->get();
             $q = Quote::active()->inRandomOrder()->first();
 
             if (!$q) {
@@ -32,10 +33,7 @@ class homeController extends Controller
             }
 
             return response()->json([
-                'data' => [
-                    'id'   => $q->id,
-                    'text' => $q->text_localized,
-                ]
+                'data' => $quotes
             ]);
         }
 }
