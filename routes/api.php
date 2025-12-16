@@ -51,19 +51,22 @@ use App\Http\Controllers\UserNotificationSettingController;
 
 
 Route::prefix('auth')->group(function () {
-    Route::post('/register',          [AuthController::class, 'register']);
-    Route::post('/login',             [AuthController::class, 'login']);
+   Route::post('/register',[AuthController::class,'register']);
+Route::post('/login',[AuthController::class,'login']);
 
-    Route::post('/email/verify-otp',  [AuthController::class, 'verifyEmailOtp']);
-    Route::post('/email/resend-otp',  [AuthController::class, 'resendEmailOtp']);
+Route::post('/email/verify',[AuthController::class,'verifyEmailOtp']);
+Route::post('/email/resend',[AuthController::class,'resendEmailOtp']);
 
-    Route::post('/password/email',    [AuthController::class, 'sendResetLink']);
-    Route::post('/password/reset',    [AuthController::class, 'resetPassword']);
+Route::post('/password/otp',[AuthController::class,'sendPasswordOtp']);
+Route::post('/password/reset-otp',[AuthController::class,'resetPasswordWithOtp']);
 
-    Route::middleware('auth:sanctum')->group(function () {
-        Route::get('/me',    [AuthController::class, 'me']);
-        Route::post('/logout',[AuthController::class, 'logout']);
-    });
+Route::post('/auth/refresh',[AuthController::class,'refresh']);
+
+Route::middleware('auth:sanctum')->post(
+    '/logout',
+    [AuthController::class,'logout']
+);
+
 });
 
 // ===== Admin(requires role:admin) =====
