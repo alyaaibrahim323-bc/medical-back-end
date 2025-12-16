@@ -2,7 +2,7 @@
 
 @slot('header')
 @component('mail::header', ['url' => config('app.url')])
-<img src="{{ asset('images/logo.png') }}"
+<img src="{{ asset('image/logo.png') }}"
      alt="Bondwell"
      style="height:60px; margin:auto; display:block;">
 @endcomponent
