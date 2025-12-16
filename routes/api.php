@@ -52,7 +52,7 @@ use App\Http\Controllers\UserNotificationSettingController;
 
 Route::prefix('auth')->group(function () {
    Route::post('/register',[AuthController::class,'register']);
-Route::post('/login',[AuthController::class,'login']);
+   Route::post('/login',[AuthController::class,'login']);
 
 Route::post('/email/verify',[AuthController::class,'verifyEmailOtp']);
 Route::post('/email/resend',[AuthController::class,'resendEmailOtp']);
