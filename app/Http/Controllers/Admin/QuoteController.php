@@ -15,6 +15,14 @@ class QuoteController extends Controller
             ->when($r->status && $r->status !== 'all', function ($x) use ($r) {
                 $x->where('status', $r->status);
             })
+            ->when($r->filled('search'), function ($x) use ($r) {
+            $term = trim($r->search);
+
+            $x->where(function ($qq) use ($term) {
+                $qq->where('text', 'like', "%{$term}%")
+                   ->orWhere('author', 'like', "%{$term}%");
+            });
+        })
             ->orderBy('sort_order')
             ->orderByDesc('id');
 

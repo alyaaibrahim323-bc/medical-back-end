@@ -26,28 +26,17 @@ class DoctorSessionsController extends Controller
      * GET /doctor/sessions?scope=upcoming&status=confirmed&search=menna&from=2025-11-01&to=2025-11-30
      */
     public function index(Request $r)
-    {
-        $therapistId = $r->user()->therapist->id;
+{
+    $therapistId = $r->user()->therapist->id;
 
-        // Base query
-        $base = TherapySession::with(['user','payment'])
-            ->forDoctor($therapistId)
-            ->orderBy('scheduled_at', 'desc');
+    // -------- BASE (مش بنحط eager load هنا عشان counts أسرع) --------
+    $base = TherapySession::query()
+        ->forDoctor($therapistId);
 
-        // ✅ أرقام التابات / الستيتس للدكتور Dashboard
-        $counts = [
-            'all'        => (clone $base)->count(),
-            'past'       => (clone $base)->where('scheduled_at', '<',  now())->count(),
-            'pending'    => (clone $base)->where('status', TherapySession::STATUS_PENDING)->count(),
-            'confirmed'  => (clone $base)->where('status', TherapySession::STATUS_CONFIRMED)->count(),
-            'completed'  => (clone $base)->where('status', TherapySession::STATUS_COMPLETED)->count(),
-            'cancelled'  => (clone $base)->where('status', TherapySession::STATUS_CANCELLED)->count(),
-            'no_show'    => (clone $base)->where('status', TherapySession::STATUS_NO_SHOW)->count(),
-        ];
+    // -------- APPLY FILTERS THAT SHOULD AFFECT COUNTS --------
+    $applyFiltersForCounts = function ($q) use ($r) {
 
-        $q = clone $base;
-
-        // 🔹 scope = upcoming | past | all
+        // scope = upcoming | past | all
         if ($scope = $r->query('scope')) {
             if ($scope === 'upcoming') {
                 $q->where('scheduled_at', '>=', now());
@@ -56,38 +45,64 @@ class DoctorSessionsController extends Controller
             }
         }
 
-        // 🔹 status filter
-        if ($r->filled('status') && in_array($r->status, [
-            TherapySession::STATUS_PENDING,
-            TherapySession::STATUS_CONFIRMED,
-            TherapySession::STATUS_COMPLETED,
-            TherapySession::STATUS_CANCELLED,
-            TherapySession::STATUS_NO_SHOW,
-        ], true)) {
-            $q->where('status', $r->status);
-        }
-
-        // 🔹 search على اسم / إيميل الكلاينت
+        // search على اسم / إيميل الكلاينت
         if ($search = $r->query('search')) {
+            $search = trim($search);
             $q->whereHas('user', function ($u) use ($search) {
                 $u->where('name', 'like', "%{$search}%")
                   ->orWhere('email', 'like', "%{$search}%");
             });
         }
 
-        // 🔹 فلترة بالتاريخ
+        // فلترة بالتاريخ
         if ($r->filled('from')) {
             $q->whereDate('scheduled_at', '>=', $r->query('from'));
         }
         if ($r->filled('to')) {
             $q->whereDate('scheduled_at', '<=', $r->query('to'));
         }
+    };
 
-        return response()->json([
-            'data'   => $q->paginate(20),
-            'counts' => $counts,
-        ]);
+    // -------- COUNTS (يتأثر بالـ scope/search/from/to) --------
+    $countsBase = clone $base;
+    $applyFiltersForCounts($countsBase);
+
+    $counts = [
+        'all'        => (clone $countsBase)->count(),
+        'past'       => (clone $countsBase)->where('scheduled_at', '<',  now())->count(),
+        'pending'    => (clone $countsBase)->where('status', TherapySession::STATUS_PENDING)->count(),
+        'confirmed'  => (clone $countsBase)->where('status', TherapySession::STATUS_CONFIRMED)->count(),
+        'completed'  => (clone $countsBase)->where('status', TherapySession::STATUS_COMPLETED)->count(),
+        'cancelled'  => (clone $countsBase)->where('status', TherapySession::STATUS_CANCELLED)->count(),
+        'no_show'    => (clone $countsBase)->where('status', TherapySession::STATUS_NO_SHOW)->count(),
+    ];
+
+    // -------- LIST QUERY --------
+    $q = TherapySession::with(['user','payment'])
+        ->forDoctor($therapistId);
+
+    // نفس الفلاتر (علشان data = counts context)
+    $applyFiltersForCounts($q);
+
+    // status filter (لليست بس)
+    if ($r->filled('status') && in_array($r->status, [
+        TherapySession::STATUS_PENDING,
+        TherapySession::STATUS_CONFIRMED,
+        TherapySession::STATUS_COMPLETED,
+        TherapySession::STATUS_CANCELLED,
+        TherapySession::STATUS_NO_SHOW,
+    ], true)) {
+        $q->where('status', $r->status);
     }
+
+    $q->orderBy('scheduled_at', 'desc');
+
+    return response()->json([
+        'data'   => $q->paginate(20),
+        'counts' => $counts,
+    ]);
+}
+
 
     /**
      * تفاصيل جلسة واحدة للدكتور

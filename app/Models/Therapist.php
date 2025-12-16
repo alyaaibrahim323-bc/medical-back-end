@@ -12,7 +12,7 @@ class Therapist extends Model
     'rating_avg','rating_count','is_active','is_chat_online',
     'last_online_at','avatar',
     'chat_days','chat_from','chat_to',
-];
+    ];
 
     protected $casts = [
         'specialty'      => 'array',  // {"en": "...", "ar": "..."}
