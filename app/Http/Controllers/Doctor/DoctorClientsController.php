@@ -12,11 +12,10 @@ class DoctorClientsController extends Controller
 {
     // قائمة كل المشتركين في باكيدجات هذا الدكتور
     // فلاتر اختيارية: ?package_id= & ?active=true/false & ?q=اسم_العميل/الإيميل
-  public function subscriptions(Request $r)
+public function subscriptions(Request $r)
 {
     $therapistId = $r->user()->therapist->id;
 
-    // 👈 base query (package_id + q فقط)
     $base = UserPackage::query()
         ->with([
             'user:id,name,email,phone',
@@ -33,36 +32,29 @@ class DoctorClientsController extends Controller
             );
         });
 
-    // ✅ الأعداد (كلها / Active / Inactive) على أساس status
+    // ✅ counts: active vs expired
     $counts = [
-        'all'      => (clone $base)->count(),
-        'active'   => (clone $base)->where('status', 'active')->count(),
-        'inactive' => (clone $base)->where('status', '!=', 'active')->count(),
+        'all'     => (clone $base)->count(),
+        'active'  => (clone $base)->where('status', 'active')->count(),
+        'expired' => (clone $base)->where('status', 'expired')->count(), // ✅ only expired
     ];
 
-    // 👇 نطبّق فلتر active حسب التاب المفتوح
+    // ✅ list filter
     $q = clone $base;
 
-    $q->when($r->filled('active'), function ($x) use ($r) {
-        $bool = filter_var($r->active, FILTER_VALIDATE_BOOLEAN);
-
-        if ($bool) {
-            // لو ?active=true → رجّع اللى status=active
-            $x->where('status', 'active');
-        } else {
-            // لو ?active=false → رجّع أى حاجة غير active
-            $x->where('status', '!=', 'active');
+    $q->when($r->filled('status'), function ($x) use ($r) {
+        if (in_array($r->status, ['active', 'expired'], true)) {
+            $x->where('status', $r->status);
         }
-    })
-    ->orderByDesc('id');
+    })->orderByDesc('id');
 
     $paginated = $q->paginate(20);
 
     return UserPackageResource::collection($paginated)->additional([
         'counts' => $counts,
-
     ]);
 }
+
 
 
 

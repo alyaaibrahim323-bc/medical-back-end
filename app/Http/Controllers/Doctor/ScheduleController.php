@@ -23,67 +23,67 @@ class ScheduleController extends Controller
         return response()->json(['data'=>$t->schedules()->orderBy('weekday')->get()]);
     }
 
- public function store(Request $request)
-{
-    $data = $request->validate([
-        'weekday'      => ['required','array','min:1'],
-        'weekday.*'    => ['string','in:sunday,monday,tuesday,wednesday,thursday,friday,saturday'],
-        'start_time'   => ['required','date_format:H:i'],
-        'end_time'     => ['required','date_format:H:i','after:start_time'],
-        'slot_minutes' => ['required','integer','min:15','max:240'],
-        'is_active'    => ['nullable','boolean'],
-    ]);
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'weekday'      => ['required','array','min:1'],
+            'weekday.*'    => ['string','in:sunday,monday,tuesday,wednesday,thursday,friday,saturday'],
+            'start_time'   => ['required','date_format:H:i'],
+            'end_time'     => ['required','date_format:H:i','after:start_time'],
+            'slot_minutes' => ['required','integer','min:15','max:240'],
+            'is_active'    => ['nullable','boolean'],
+        ]);
 
-    $therapistId = $request->user()->therapist->id;
+        $therapistId = $request->user()->therapist->id;
 
-    // 1) تطبيع وتحويل الأسماء لأرقام
-    $nameToNum = [
-        'sunday'=>0,'monday'=>1,'tuesday'=>2,'wednesday'=>3,
-        'thursday'=>4,'friday'=>5,'saturday'=>6,
-    ];
-    $weeknames = array_values(array_unique(array_map(fn($x)=>strtolower(trim($x)), $data['weekday'])));
-    $weeknums  = array_map(fn($name)=>$nameToNum[$name], $weeknames);
-
-    // 2) الأيام الموجودة بالفعل (لتفادي duplicate key)
-    $existing = \App\Models\TherapistSchedule::query()
-        ->where('therapist_id', $therapistId)
-        ->whereIn('weekday', $weeknums)
-        ->pluck('weekday')
-        ->all();
-
-    // 3) اللى هننشئه فعلاً
-    $toCreateNums = array_values(array_diff($weeknums, $existing));
-
-    // 4) تجهيز البلود لتحزين جماعي
-    $now = now();
-    $payload = array_map(function($w) use ($therapistId, $data, $now){
-        return [
-            'therapist_id' => $therapistId,
-            'weekday'      => $w,
-            'start_time'   => $data['start_time'],
-            'end_time'     => $data['end_time'],
-            'slot_minutes' => $data['slot_minutes'],
-            'is_active'    => $data['is_active'] ?? true,
-            'created_at'   => $now,
-            'updated_at'   => $now,
+        // 1) تطبيع وتحويل الأسماء لأرقام
+        $nameToNum = [
+            'sunday'=>0,'monday'=>1,'tuesday'=>2,'wednesday'=>3,
+            'thursday'=>4,'friday'=>5,'saturday'=>6,
         ];
-    }, $toCreateNums);
+        $weeknames = array_values(array_unique(array_map(fn($x)=>strtolower(trim($x)), $data['weekday'])));
+        $weeknums  = array_map(fn($name)=>$nameToNum[$name], $weeknames);
 
-    if (!empty($payload)) {
-        \App\Models\TherapistSchedule::insert($payload);
+        // 2) الأيام الموجودة بالفعل (لتفادي duplicate key)
+        $existing = \App\Models\TherapistSchedule::query()
+            ->where('therapist_id', $therapistId)
+            ->whereIn('weekday', $weeknums)
+            ->pluck('weekday')
+            ->all();
+
+        // 3) اللى هننشئه فعلاً
+        $toCreateNums = array_values(array_diff($weeknums, $existing));
+
+        // 4) تجهيز البلود لتحزين جماعي
+        $now = now();
+        $payload = array_map(function($w) use ($therapistId, $data, $now){
+            return [
+                'therapist_id' => $therapistId,
+                'weekday'      => $w,
+                'start_time'   => $data['start_time'],
+                'end_time'     => $data['end_time'],
+                'slot_minutes' => $data['slot_minutes'],
+                'is_active'    => $data['is_active'] ?? true,
+                'created_at'   => $now,
+                'updated_at'   => $now,
+            ];
+        }, $toCreateNums);
+
+        if (!empty($payload)) {
+            \App\Models\TherapistSchedule::insert($payload);
+        }
+
+        // 5) رجّع أسماء الأيام (مش الأرقام) فى created/skipped
+        $numToName = array_flip($nameToNum);
+        $createdNames = array_map(fn($n)=>$numToName[$n], $toCreateNums);
+        $skippedNames = array_map(fn($n)=>$numToName[$n], $existing);
+
+        return response()->json([
+            'message'      => 'Schedules created successfully',
+            'created'      => $createdNames,
+            'skipped_days' => $skippedNames,
+        ]);
     }
-
-    // 5) رجّع أسماء الأيام (مش الأرقام) فى created/skipped
-    $numToName = array_flip($nameToNum);
-    $createdNames = array_map(fn($n)=>$numToName[$n], $toCreateNums);
-    $skippedNames = array_map(fn($n)=>$numToName[$n], $existing);
-
-    return response()->json([
-        'message'      => 'Schedules created successfully',
-        'created'      => $createdNames,
-        'skipped_days' => $skippedNames,
-    ]);
-}
 
 
 
