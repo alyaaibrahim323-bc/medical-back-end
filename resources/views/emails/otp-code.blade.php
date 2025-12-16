@@ -1,11 +1,10 @@
 @component('mail::message')
 
-{{-- HEADER LOGO --}}
 @slot('header')
 @component('mail::header', ['url' => config('app.url')])
 <img src="{{ asset('images/logo.png') }}"
      alt="Bondwell"
-     style="height: 60px;">
+     style="height:60px; margin:auto; display:block;">
 @endcomponent
 @endslot
 
@@ -25,7 +24,5 @@ If you did not request this, you can safely ignore this email.
 
 Thanks,
 **Bondwell Team**
-
-@endcomponent
 
 @endcomponent
