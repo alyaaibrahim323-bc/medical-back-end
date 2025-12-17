@@ -69,5 +69,10 @@ class Therapist extends Model
 
         return $arr ?: null;
     }
+    public function chatAvailabilities()
+{
+    return $this->hasMany(\App\Models\TherapistChatAvailability::class);
+}
+
 }
 

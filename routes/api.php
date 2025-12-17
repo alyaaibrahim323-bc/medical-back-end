@@ -31,6 +31,7 @@ use App\Http\Controllers\Doctor\DoctorClientsController;
 use App\Http\Controllers\Doctor\ProfileController;
 use App\Http\Controllers\Doctor\SingleSessionManageController;
 use App\Http\Controllers\Doctor\DoctorChatController;
+use App\Http\Controllers\Doctor\ChatAvailabilityController;
 
 // Public
 use App\Http\Controllers\Public\TherapistController as PublicTherapist;
@@ -235,6 +236,16 @@ Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(funct
     Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
     Route::post('chats/{chat}/read',     [ChatMessageController::class, 'read']);
 });
+
+     Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(function () {
+        Route::get('chat-availability', [ChatAvailabilityController::class, 'index']);
+        Route::post('chat-availability', [ChatAvailabilityController::class, 'store']);
+        Route::patch('chat-availability/{day}', [ChatAvailabilityController::class, 'update']);
+        Route::delete('chat-availability/{day}', [ChatAvailabilityController::class, 'destroy']);
+
+        // ✅ bulk replace
+        Route::put('chat-availability', [ChatAvailabilityController::class, 'replace']);
+    });
 
 // ===== Public =====
 Route::get('/home/banners', [homeController::class, 'homebanner']);
