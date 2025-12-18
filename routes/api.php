@@ -61,6 +61,10 @@ Route::post('/email/resend',[AuthController::class,'resendEmailOtp']);
 Route::post('/password/otp',[AuthController::class,'sendPasswordOtp']);
 Route::post('/password/reset-otp',[AuthController::class,'resetPasswordWithOtp']);
 
+Route::post('/forgot-password/dashboard', [AuthController::class, 'sendDashboardResetToken']);
+Route::post('/reset-password/dashboard', [AuthController::class, 'resetDashboardPassword']);
+
+
 Route::post('/auth/refresh',[AuthController::class,'refresh']);
 
 Route::middleware('auth:sanctum')->post(
@@ -188,6 +192,8 @@ Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(funct
     // edit in on day {id from table therapist-schedules}
     Route::patch('/schedules/{id}',   [ScheduleController::class, 'update']);
     Route::delete('/schedules/{id}',  [ScheduleController::class, 'destroy']);
+    Route::put('schedule/replace', [ScheduleController::class, 'replace']);
+
     // timeoffs
     Route::get('/timeoffs',           [TimeoffController::class, 'index']);
     Route::post('/timeoffs',          [TimeoffController::class, 'store']);

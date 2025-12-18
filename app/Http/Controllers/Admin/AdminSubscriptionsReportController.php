@@ -12,75 +12,71 @@ use App\Http\Resources\UserPackageResource;
 class AdminSubscriptionsReportController extends Controller
 {
 public function index(Request $r)
-{
-    // ---------- SEARCH HELPER ----------
-    $applySearch = function ($q) use ($r) {
-        if (!$r->filled('search')) return;
+    {
+        $term = trim((string) $r->query('search', ''));
 
-        $term = trim($r->search);
+        $applySearch = function ($q) use ($term) {
+            if ($term === '') return;
 
-        $q->where(function ($qq) use ($term) {
+            $q->where(function ($qq) use ($term) {
 
-            // user name/email/phone
-            $qq->whereHas('user', function ($u) use ($term) {
-                $u->where('name', 'like', "%{$term}%")
-                  ->orWhere('email', 'like', "%{$term}%")
-                  ->orWhere('phone', 'like', "%{$term}%");
-            })
+                // user name/email/phone
+                $qq->whereHas('user', function ($u) use ($term) {
+                    $u->where('name', 'like', "%{$term}%")
+                      ->orWhere('email', 'like', "%{$term}%")
+                      ->orWhere('phone', 'like', "%{$term}%");
+                })
 
-            // therapist user name/email/phone
-            ->orWhereHas('therapist.user', function ($tu) use ($term) {
-                $tu->where('name', 'like', "%{$term}%")
-                   ->orWhere('email', 'like', "%{$term}%")
-                   ->orWhere('phone', 'like', "%{$term}%");
-            })
+                // therapist -> user
+                ->orWhereHas('therapist.user', function ($tu) use ($term) {
+                    $tu->where('name', 'like', "%{$term}%")
+                       ->orWhere('email', 'like', "%{$term}%")
+                       ->orWhere('phone', 'like', "%{$term}%");
+                })
 
-            // package name (عدّلي العمود حسب عندك)
-            ->orWhereHas('package', function ($p) use ($term) {
-                $p->where('name', 'like', "%{$term}%")
-                  ->orWhere('title', 'like', "%{$term}%");
-            })
+                // package fields
+                ->orWhereHas('package', function ($p) use ($term) {
+                    $p->where('name', 'like', "%{$term}%");
 
-            // direct id search
-            ->orWhere('id', $term);
-        });
-    };
+                });
 
-    // ----- BASE QUERY (for counts) -----
-    $base = UserPackage::query()
-        ->when($r->filled('therapist_id'), fn($x)=>$x->where('therapist_id', $r->therapist_id))
-        ->when($r->filled('user_id'), fn($x)=>$x->where('user_id', $r->user_id));
+                // direct ID if numeric
+                if (ctype_digit($term)) {
+                    $qq->orWhere('id', (int)$term);
+                }
+            });
+        };
 
-    // ✅ search affects counts too
-    $applySearch($base);
+        // base for counts
+        $base = UserPackage::query()
+            ->when($r->filled('therapist_id'), fn($x) => $x->where('therapist_id', $r->therapist_id))
+            ->when($r->filled('user_id'), fn($x) => $x->where('user_id', $r->user_id));
 
-    // ----- COUNTS -----
-    $counts = [
-        'all'       => (clone $base)->count(),
-        'active'    => (clone $base)->where('status', 'active')->count(),
-        'completed' => (clone $base)->where('status', 'completed')->count(),
-        'expired'   => (clone $base)->where('status', 'expired')->count(),
-        'pending'   => (clone $base)->where('status', 'pending')->count(),
-    ];
+        $applySearch($base);
 
-    // ----- LIST -----
-    $q = UserPackage::with(['user','package','therapist.user'])
-        ->when($r->filled('therapist_id'), fn($x)=>$x->where('therapist_id', $r->therapist_id))
-        ->when($r->filled('user_id'), fn($x)=>$x->where('user_id', $r->user_id))
-        ->when($r->filled('status'), fn($x)=>$x->where('status', $r->status))
-        ->when($r->filled('id'), fn($x)=>$x->where('id', $r->id));
+        $counts = [
+            'all'       => (clone $base)->count(),
+            'active'    => (clone $base)->where('status', 'active')->count(),
+            'completed' => (clone $base)->where('status', 'completed')->count(),
+            'expired'   => (clone $base)->where('status', 'expired')->count(),
+            'pending'   => (clone $base)->where('status', 'pending')->count(),
+        ];
 
-    // ✅ same search affects list
-    $applySearch($q);
+        // list query
+        $q = UserPackage::with(['user','package','therapist.user'])
+            ->when($r->filled('therapist_id'), fn($x) => $x->where('therapist_id', $r->therapist_id))
+            ->when($r->filled('user_id'), fn($x) => $x->where('user_id', $r->user_id))
+            ->when($r->filled('status') && $r->status !== 'all', fn($x) => $x->where('status', $r->status))
+            ->when($r->filled('id'), fn($x) => $x->where('id', $r->id));
 
-    $q->orderByDesc('id');
+        $applySearch($q);
 
-    $paginated = $q->paginate(20);
+        $paginated = $q->orderByDesc('id')->paginate(20);
 
-    return UserPackageResource::collection($paginated)->additional([
-        'counts' => $counts,
-    ]);
-}
+        return UserPackageResource::collection($paginated)->additional([
+            'counts' => $counts,
+        ]);
+    }
 
 
 public function show($id)

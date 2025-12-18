@@ -12,27 +12,49 @@ public function index(Request $r)
 {
     $therapistId = auth()->user()->therapist->id;
 
-    // ✅ Search helper
+    // ✅ Search helper (JSON-aware)
     $applySearch = function ($q) use ($r) {
         if (!$r->filled('search')) return;
 
         $term = trim($r->search);
 
         $q->where(function ($qq) use ($term) {
-            $qq->where('name', 'like', "%{$term}%")
-               ->orWhere('description', 'like', "%{$term}%")
-               ->orWhere('id', $term);
+
+            // name.en / name.ar
+            $qq->whereRaw(
+                "JSON_UNQUOTE(JSON_EXTRACT(name, '$.en')) LIKE ?",
+                ["%{$term}%"]
+            )
+            ->orWhereRaw(
+                "JSON_UNQUOTE(JSON_EXTRACT(name, '$.ar')) LIKE ?",
+                ["%{$term}%"]
+            )
+
+            // description.en / description.ar
+            ->orWhereRaw(
+                "JSON_UNQUOTE(JSON_EXTRACT(description, '$.en')) LIKE ?",
+                ["%{$term}%"]
+            )
+            ->orWhereRaw(
+                "JSON_UNQUOTE(JSON_EXTRACT(description, '$.ar')) LIKE ?",
+                ["%{$term}%"]
+            );
+
+            // id search لو رقم
+            if (ctype_digit($term)) {
+                $qq->orWhere('id', (int)$term);
+            }
         });
     };
 
-    // 👈 base query + عدد اليوزرز في كل باكيدج
+    // 👈 base query + users count
     $base = Package::ownedByDoctor($therapistId)
         ->withCount('userPackages');
 
-    // ✅ apply search to base so counts affected
+    // ✅ apply search so counts affected
     $applySearch($base);
 
-    // ✅ الأعداد لكل تاب (هتتأثر بالـ search)
+    // ✅ counts (search-aware)
     $counts = [
         'all'      => (clone $base)->count(),
         'active'   => (clone $base)->where('is_active', true)->count(),
@@ -42,7 +64,7 @@ public function index(Request $r)
     // ----- LIST -----
     $q = clone $base;
 
-    // active filter (تاب active/inactive)
+    // tab filter
     $q->when(
         $r->filled('active'),
         fn($x) => $x->where(
@@ -51,18 +73,14 @@ public function index(Request $r)
         )
     );
 
-    // (اختياري) لو مش حابة search يتطبق مرتين بسبب clone، سيبيه — هنا clone واخد search بالفعل.
-    // لو شيلتي clone وبنيتي q من جديد، ساعتها لازم $applySearch($q)
-
     $q->orderByDesc('id');
 
-    $list = $q->paginate(20);
-
     return response()->json([
-        'data'   => $list,
+        'data'   => $q->paginate(20),
         'counts' => $counts,
     ]);
 }
+
 
 
 

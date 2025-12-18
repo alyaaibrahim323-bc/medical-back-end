@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Password;
+
+
 
 class AuthController extends Controller
 {
@@ -295,4 +298,60 @@ class AuthController extends Controller
             'token_type'=>'Bearer',
         ];
     }
+
+    public function sendDashboardResetToken(Request $r)
+{
+    $data = $r->validate([
+        'email' => ['required','email','exists:users,email'],
+    ]);
+
+    $user = User::where('email', $data['email'])->firstOrFail();
+
+    // generate reset token (Laravel default)
+    $token = Password::createToken($user);
+
+    return response()->json([
+        'message' => 'Reset token generated',
+        'data' => [
+            'email' => $user->email,
+            'token' => $token,
+            // الداش بورد يبني اللينك بنفسه
+            // example:
+            // https://dashboard.app/reset-password?token=XXX&email=YYY
+        ]
+    ]);
+}
+
+public function resetDashboardPassword(Request $r)
+{
+    $data = $r->validate([
+        'email'    => ['required','email','exists:users,email'],
+        'token'    => ['required','string'],
+        'password' => ['required','confirmed', Pw::min(8)],
+    ]);
+
+    $status = Password::reset(
+        $data,
+        function (User $user, string $password) {
+            // اقفل كل التوكنات القديمة
+            $user->tokens()->delete();
+
+            $user->forceFill([
+                'password' => Hash::make($password),
+                'remember_token' => Str::random(60),
+            ])->save();
+        }
+    );
+
+    if ($status !== Password::PASSWORD_RESET) {
+        return response()->json([
+            'message' => __($status),
+        ], 422);
+    }
+
+    return response()->json([
+        'message' => 'Password reset successfully',
+    ]);
+}
+
 }

@@ -16,6 +16,41 @@ public function subscriptions(Request $r)
 {
     $therapistId = $r->user()->therapist->id;
 
+    // ✅ Search helper (using ?search=)
+    $applySearch = function ($q) use ($r) {
+        if (!$r->filled('search')) return;
+
+        $term = trim((string) $r->search);
+        $kw   = "%{$term}%";
+
+        $q->where(function ($qq) use ($term, $kw) {
+
+            // 1) user name / email / phone
+            $qq->whereHas('user', function ($u) use ($kw) {
+                $u->where('name', 'like', $kw)
+                  ->orWhere('email', 'like', $kw)
+                  ->orWhere('phone', 'like', $kw);
+            })
+
+            // 2) package name (JSON en/ar)
+            ->orWhereHas('package', function ($p) use ($kw) {
+                $p->whereRaw(
+                        "JSON_UNQUOTE(JSON_EXTRACT(name, '$.en')) LIKE ?",
+                        [$kw]
+                    )
+                  ->orWhereRaw(
+                        "JSON_UNQUOTE(JSON_EXTRACT(name, '$.ar')) LIKE ?",
+                        [$kw]
+                    );
+            });
+
+            // 3) direct id search
+            if (ctype_digit($term)) {
+                $qq->orWhere('id', (int) $term);
+            }
+        });
+    };
+
     $base = UserPackage::query()
         ->with([
             'user:id,name,email,phone',
@@ -24,22 +59,22 @@ public function subscriptions(Request $r)
             'redemptions:id,user_package_id,therapy_session_id,redeemed_at'
         ])
         ->where('therapist_id', $therapistId)
-        ->when($r->filled('package_id'), fn($x) => $x->where('package_id', $r->integer('package_id')))
-        ->when($r->filled('q'), function ($x) use ($r) {
-            $kw = '%'.trim($r->q).'%';
-            $x->whereHas('user', fn($u) =>
-                $u->where('name','like',$kw)->orWhere('email','like',$kw)
-            );
-        });
+        ->when(
+            $r->filled('package_id'),
+            fn($x) => $x->where('package_id', $r->integer('package_id'))
+        );
 
-    // ✅ counts: active vs expired
+    // ✅ search affects counts
+    $applySearch($base);
+
+    // ✅ counts
     $counts = [
         'all'     => (clone $base)->count(),
         'active'  => (clone $base)->where('status', 'active')->count(),
-        'expired' => (clone $base)->where('status', 'expired')->count(), // ✅ only expired
+        'expired' => (clone $base)->where('status', 'expired')->count(),
     ];
 
-    // ✅ list filter
+    // ✅ list
     $q = clone $base;
 
     $q->when($r->filled('status'), function ($x) use ($r) {
@@ -48,12 +83,13 @@ public function subscriptions(Request $r)
         }
     })->orderByDesc('id');
 
-    $paginated = $q->paginate(20);
-
-    return UserPackageResource::collection($paginated)->additional([
+    return UserPackageResource::collection(
+        $q->paginate(20)
+    )->additional([
         'counts' => $counts,
     ]);
 }
+
 
 
 

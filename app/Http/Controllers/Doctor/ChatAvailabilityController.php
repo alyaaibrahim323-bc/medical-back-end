@@ -108,46 +108,41 @@ class ChatAvailabilityController extends Controller
      * - يمسح القديم بالكامل ويكتب الجديد
      */
     public function replace(Request $r)
-    {
-        $t = $r->user()->therapist()->firstOrFail();
+{
+    $t = $r->user()->therapist()->firstOrFail();
 
-        $data = $r->validate([
-            'items'              => ['required','array'],
-            'items.*.day_of_week'=> ['required','integer','min:0','max:6'],
-            'items.*.from_time'  => ['required','date_format:H:i'],
-            'items.*.to_time'    => ['required','date_format:H:i'],
-            'items.*.is_active'  => ['sometimes','boolean'],
-        ]);
+    $data = $r->validate([
+        'days'      => ['required','array','min:1'],
+        'days.*'    => ['integer','min:0','max:6'],
+        'from_time' => ['required','date_format:H:i'],
+        'to_time'   => ['required','date_format:H:i','after:from_time'],
+        'is_active' => ['sometimes','boolean'],
+    ]);
 
-        // validate from < to لكل عنصر
-        foreach ($data['items'] as $it) {
-            if ($it['to_time'] <= $it['from_time']) {
-                return response()->json([
-                    'message' => 'to_time must be after from_time',
-                ], 422);
-            }
-        }
+    $isActive = $data['is_active'] ?? true;
 
-        // replace
-        TherapistChatAvailability::where('therapist_id', $t->id)->delete();
+    // 1) delete all old
+    TherapistChatAvailability::where('therapist_id', $t->id)->delete();
 
-        foreach ($data['items'] as $it) {
-            TherapistChatAvailability::create([
-                'therapist_id' => $t->id,
-                'day_of_week'  => (int)$it['day_of_week'],
-                'from_time'    => $it['from_time'],
-                'to_time'      => $it['to_time'],
-                'is_active'    => $it['is_active'] ?? true,
-            ]);
-        }
-
-        $items = TherapistChatAvailability::where('therapist_id', $t->id)
-            ->orderBy('day_of_week')
-            ->get();
-
-        return response()->json([
-            'message' => 'Chat availability replaced',
-            'data'    => TherapistChatAvailabilityResource::collection($items),
+    // 2) create new for selected days
+    foreach (array_unique($data['days']) as $day) {
+        TherapistChatAvailability::create([
+            'therapist_id' => $t->id,
+            'day_of_week'  => (int) $day,
+            'from_time'    => $data['from_time'],
+            'to_time'      => $data['to_time'],
+            'is_active'    => $isActive,
         ]);
     }
+
+    $items = TherapistChatAvailability::where('therapist_id', $t->id)
+        ->orderBy('day_of_week')
+        ->get();
+
+    return response()->json([
+        'message' => 'Chat availability replaced',
+        'data'    => TherapistChatAvailabilityResource::collection($items),
+    ]);
+}
+
 }

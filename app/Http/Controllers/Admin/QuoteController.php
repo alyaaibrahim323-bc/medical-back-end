@@ -9,25 +9,26 @@ use Illuminate\Http\Request;
 class QuoteController extends Controller
 {
     // GET /admin/quotes?status=active|inactive|all
-    public function index(Request $r)
+public function index(Request $r)
     {
-        $q = Quote::query()
-            ->when($r->status && $r->status !== 'all', function ($x) use ($r) {
-                $x->where('status', $r->status);
-            })
-            ->when($r->filled('search'), function ($x) use ($r) {
-            $term = trim($r->search);
+        $search = trim((string) $r->query('search', ''));
+        $status = $r->query('status', null);
 
-            $x->where(function ($qq) use ($term) {
-                $qq->where('text', 'like', "%{$term}%")
-                   ->orWhere('author', 'like', "%{$term}%");
-            });
-        })
+        $q = Quote::query()
+            ->when($status && $status !== 'all', fn($x) => $x->where('status', $status))
+            ->when($search !== '', function ($x) use ($search) {
+                $x->where(function ($qq) use ($search) {
+                    // JSON search (MySQL)
+                    $qq->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(`text`, '$.en')) LIKE ?", ["%{$search}%"])
+                       ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(`text`, '$.ar')) LIKE ?", ["%{$search}%"]);
+                });
+            })
             ->orderBy('sort_order')
             ->orderByDesc('id');
 
         return response()->json(['data' => $q->paginate(20)]);
     }
+
 
     // POST /admin/quotes
     public function store(Request $r)
