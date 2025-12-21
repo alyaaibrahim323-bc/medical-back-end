@@ -12,7 +12,7 @@
 
 Hello {{ $user->name ?? 'there' }},
 
-Use 3the verification code below to confirm your email address:
+Use the verification code below to confirm your email address:
 
 @component('mail::panel')
 ## {{ $otp }}
