@@ -1,13 +1,12 @@
 @props(['url'])
 
 <tr>
-<td class="header">
-<a href="{{ config('app.url') }}" style="display: inline-block;">
+<td class="header" style="text-align:center; padding: 20px 0;">
     <img
-        src="{{ rtrim(config('app.url'), '/') . '/image/Logo.png' }}"
+        src="{{ rtrim(config('app.url'), '/') . '/image/logo.png' }}"
         alt="Bondwell"
-        style="height:60px; width:auto; display:block;"
+        width="180"
+        style="display:block; margin:0 auto; height:auto; border:0; outline:none; text-decoration:none;"
     >
-</a>
 </td>
 </tr>
