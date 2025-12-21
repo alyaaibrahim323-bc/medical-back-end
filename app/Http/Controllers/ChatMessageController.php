@@ -28,7 +28,7 @@ class ChatMessageController extends Controller
 
         $messages = $chat->messages()
             ->with(['sender', 'reads'])
-            ->orderBy('created_at', 'asc')
+            ->orderBy('created_at', 'desc')
             ->paginate(50);
 
         return ChatMessageResource::collection($messages);

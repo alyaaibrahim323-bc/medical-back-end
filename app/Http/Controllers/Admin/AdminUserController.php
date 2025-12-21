@@ -19,52 +19,60 @@ class AdminUserController extends Controller
      *  يرجّع:
      *  data + counts
      */
-    public function index(Request $r)
-    {
-        // Base query (Admins + Doctors + Staff)
-        $base = User::query()
-            ->whereIn('role', ['admin','doctor']);
+   public function index(Request $r)
+{
+    // ✅ Base query (Admins + Doctors)
+    $base = User::query()
+        ->whereIn('role', ['admin', 'doctor']);
 
-        // Search
-        $base->when($r->filled('search'), function ($q) use ($r) {
-            $s = $r->search;
-            $q->where(function ($x) use ($s) {
-                $x->where('name','like',"%{$s}%")
-                  ->orWhere('email','like',"%{$s}%")
-                  ->orWhere('phone','like',"%{$s}%")
-                  ->orWhere('id', $s);
-            });
-        });
+    // ✅ Search (applies to base + counts + list)
+    $base->when($r->filled('search'), function ($q) use ($r) {
+        $s = trim($r->search);
 
-        // Role filter
-        $base->when($r->filled('role'), function ($q) use ($r) {
-            $q->where('role', $r->role);
-        });
+        $q->where(function ($x) use ($s) {
+            $x->where('name', 'like', "%{$s}%")
+              ->orWhere('email', 'like', "%{$s}%")
+              ->orWhere('phone', 'like', "%{$s}%");
 
-        // Status filter
-        $base->when($r->filled('status'), function ($q) use ($r) {
-            if (in_array($r->status, ['active','inactive'], true)) {
-                $q->where('status', $r->status);
+            if (is_numeric($s)) {
+                $x->orWhere('id', (int) $s);
             }
         });
+    });
 
-        // -------------------------------
-        // Counts for dashboard tabs
-        // -------------------------------
-        $counts = [
-            'all'     => (clone $base)->count(),
-            'active'  => (clone $base)->where('status','active')->count(),
-            'inactive'=> (clone $base)->where('status','inactive')->count(),
-        ];
+    // ✅ Role filter (applies to base + counts + list)
+    $base->when($r->filled('role'), function ($q) use ($r) {
+        $q->where('role', $r->role);
+    });
 
-        // Pagination data
-        $users = $base->with('roles')->orderByDesc('id')->paginate(20);
+    // -------------------------------
+    // ✅ Counts for dashboard tabs (IMPORTANT: no status filter here)
+    // -------------------------------
+    $counts = [
+        'all'      => (clone $base)->count(),
+        'active'   => (clone $base)->where('status', 'active')->count(),
+        'inactive' => (clone $base)->where('status', 'inactive')->count(),
+    ];
 
-        return response()->json([
-            'data'   => $users,
-            'counts' => $counts,
-        ]);
-    }
+    // -------------------------------
+    // ✅ List query (apply current tab/status filter only here)
+    // -------------------------------
+    $q = clone $base;
+
+    $q->when($r->filled('status'), function ($qq) use ($r) {
+        if (in_array($r->status, ['active', 'inactive'], true)) {
+            $qq->where('status', $r->status);
+        }
+    });
+
+    $users = $q->with('roles')->orderByDesc('id')->paginate(20);
+
+    return response()->json([
+        'data'   => $users,
+        'counts' => $counts,
+    ]);
+}
+
 
 
     /**

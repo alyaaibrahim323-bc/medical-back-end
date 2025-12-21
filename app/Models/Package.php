@@ -55,5 +55,11 @@ class Package extends Model
 
         return $raw ? (string)$raw : null;
     }
+
+    public function userPackages()
+{
+    return $this->hasMany(UserPackage::class);
+}
+
 }
 

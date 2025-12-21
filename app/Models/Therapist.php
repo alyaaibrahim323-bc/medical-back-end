@@ -8,8 +8,10 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 class Therapist extends Model
 {
     protected $fillable = [
-        'user_id','specialty','bio','price_cents','currency',
-        'rating_avg','rating_count','is_active','is_chat_online','last_online_at','avatar'
+    'user_id','specialty','bio','price_cents','currency',
+    'rating_avg','rating_count','is_active','is_chat_online',
+    'last_online_at','avatar',
+    'chat_days','chat_from','chat_to',
     ];
 
     protected $casts = [
@@ -67,5 +69,10 @@ class Therapist extends Model
 
         return $arr ?: null;
     }
+    public function chatAvailabilities()
+{
+    return $this->hasMany(\App\Models\TherapistChatAvailability::class);
+}
+
 }
 

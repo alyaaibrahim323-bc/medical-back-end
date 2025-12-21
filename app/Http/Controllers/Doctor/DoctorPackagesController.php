@@ -8,38 +8,81 @@ use Illuminate\Http\Request;
 
 class DoctorPackagesController extends Controller
 {
-    public function index(Request $r)
+public function index(Request $r)
 {
     $therapistId = auth()->user()->therapist->id;
 
-    // 👈 base query من غير فلتر active
-    $base = Package::ownedByDoctor($therapistId);
+    // ✅ Search helper (JSON-aware)
+    $applySearch = function ($q) use ($r) {
+        if (!$r->filled('search')) return;
 
-    // ✅ الأعداد لكل تاب
+        $term = trim($r->search);
+
+        $q->where(function ($qq) use ($term) {
+
+            // name.en / name.ar
+            $qq->whereRaw(
+                "JSON_UNQUOTE(JSON_EXTRACT(name, '$.en')) LIKE ?",
+                ["%{$term}%"]
+            )
+            ->orWhereRaw(
+                "JSON_UNQUOTE(JSON_EXTRACT(name, '$.ar')) LIKE ?",
+                ["%{$term}%"]
+            )
+
+            // description.en / description.ar
+            ->orWhereRaw(
+                "JSON_UNQUOTE(JSON_EXTRACT(description, '$.en')) LIKE ?",
+                ["%{$term}%"]
+            )
+            ->orWhereRaw(
+                "JSON_UNQUOTE(JSON_EXTRACT(description, '$.ar')) LIKE ?",
+                ["%{$term}%"]
+            );
+
+            // id search لو رقم
+            if (ctype_digit($term)) {
+                $qq->orWhere('id', (int)$term);
+            }
+        });
+    };
+
+    // 👈 base query + users count
+    $base = Package::ownedByDoctor($therapistId)
+        ->withCount('userPackages');
+
+    // ✅ apply search so counts affected
+    $applySearch($base);
+
+    // ✅ counts (search-aware)
     $counts = [
         'all'      => (clone $base)->count(),
         'active'   => (clone $base)->where('is_active', true)->count(),
         'inactive' => (clone $base)->where('is_active', false)->count(),
     ];
 
-    // بعدين نطبّق الفلتر الحالي للتاب اللى الدكتور واقف عليه
+    // ----- LIST -----
     $q = clone $base;
 
+    // tab filter
     $q->when(
         $r->filled('active'),
         fn($x) => $x->where(
             'is_active',
             filter_var($r->active, FILTER_VALIDATE_BOOLEAN)
         )
-    )->orderByDesc('id');
+    );
 
-    $list = $q->paginate(20);
+    $q->orderByDesc('id');
 
     return response()->json([
-        'data'   => $list,
+        'data'   => $q->paginate(20),
         'counts' => $counts,
     ]);
 }
+
+
+
 
 
     public function store(Request $r)

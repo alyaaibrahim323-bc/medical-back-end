@@ -12,11 +12,45 @@ class DoctorClientsController extends Controller
 {
     // قائمة كل المشتركين في باكيدجات هذا الدكتور
     // فلاتر اختيارية: ?package_id= & ?active=true/false & ?q=اسم_العميل/الإيميل
-  public function subscriptions(Request $r)
+public function subscriptions(Request $r)
 {
     $therapistId = $r->user()->therapist->id;
 
-    // 👈 base query (package_id + q فقط)
+    // ✅ Search helper (using ?search=)
+    $applySearch = function ($q) use ($r) {
+        if (!$r->filled('search')) return;
+
+        $term = trim((string) $r->search);
+        $kw   = "%{$term}%";
+
+        $q->where(function ($qq) use ($term, $kw) {
+
+            // 1) user name / email / phone
+            $qq->whereHas('user', function ($u) use ($kw) {
+                $u->where('name', 'like', $kw)
+                  ->orWhere('email', 'like', $kw)
+                  ->orWhere('phone', 'like', $kw);
+            })
+
+            // 2) package name (JSON en/ar)
+            ->orWhereHas('package', function ($p) use ($kw) {
+                $p->whereRaw(
+                        "JSON_UNQUOTE(JSON_EXTRACT(name, '$.en')) LIKE ?",
+                        [$kw]
+                    )
+                  ->orWhereRaw(
+                        "JSON_UNQUOTE(JSON_EXTRACT(name, '$.ar')) LIKE ?",
+                        [$kw]
+                    );
+            });
+
+            // 3) direct id search
+            if (ctype_digit($term)) {
+                $qq->orWhere('id', (int) $term);
+            }
+        });
+    };
+
     $base = UserPackage::query()
         ->with([
             'user:id,name,email,phone',
@@ -25,43 +59,38 @@ class DoctorClientsController extends Controller
             'redemptions:id,user_package_id,therapy_session_id,redeemed_at'
         ])
         ->where('therapist_id', $therapistId)
-        ->when($r->filled('package_id'), fn($x) => $x->where('package_id', $r->integer('package_id')))
-        ->when($r->filled('q'), function ($x) use ($r) {
-            $kw = '%'.trim($r->q).'%';
-            $x->whereHas('user', fn($u) =>
-                $u->where('name','like',$kw)->orWhere('email','like',$kw)
-            );
-        });
+        ->when(
+            $r->filled('package_id'),
+            fn($x) => $x->where('package_id', $r->integer('package_id'))
+        );
 
-    // ✅ الأعداد (كلها / Active / Inactive) على أساس status
+    // ✅ search affects counts
+    $applySearch($base);
+
+    // ✅ counts
     $counts = [
-        'all'      => (clone $base)->count(),
-        'active'   => (clone $base)->where('status', 'active')->count(),
-        'inactive' => (clone $base)->where('status', '!=', 'active')->count(),
+        'all'     => (clone $base)->count(),
+        'active'  => (clone $base)->where('status', 'active')->count(),
+        'expired' => (clone $base)->where('status', 'expired')->count(),
     ];
 
-    // 👇 نطبّق فلتر active حسب التاب المفتوح
+    // ✅ list
     $q = clone $base;
 
-    $q->when($r->filled('active'), function ($x) use ($r) {
-        $bool = filter_var($r->active, FILTER_VALIDATE_BOOLEAN);
-
-        if ($bool) {
-            // لو ?active=true → رجّع اللى status=active
-            $x->where('status', 'active');
-        } else {
-            // لو ?active=false → رجّع أى حاجة غير active
-            $x->where('status', '!=', 'active');
+    $q->when($r->filled('status'), function ($x) use ($r) {
+        if (in_array($r->status, ['active', 'expired'], true)) {
+            $x->where('status', $r->status);
         }
-    })
-    ->orderByDesc('id');
+    })->orderByDesc('id');
 
-    $paginated = $q->paginate(20);
-
-    return UserPackageResource::collection($paginated)->additional([
+    return UserPackageResource::collection(
+        $q->paginate(20)
+    )->additional([
         'counts' => $counts,
     ]);
 }
+
+
 
 
 

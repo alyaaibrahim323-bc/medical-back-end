@@ -7,6 +7,7 @@ use App\Models\Therapist;
 use App\Models\Package;
 use App\Models\SingleSessionOffer;
 use App\Services\TherapistAvailabilityService;
+use App\Http\Resources\TherapistChatAvailabilityResource;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 
@@ -95,36 +96,40 @@ class TherapistController extends Controller
     //  DETAILS
     // ============================================
     public function show($id)
-    {
-        $t = Therapist::with('user')
-            ->where('is_active', true)
-            ->findOrFail($id);
+{
+    $t = Therapist::with(['user','chatAvailabilities'])
+        ->where('is_active', true)
+        ->findOrFail($id);
 
-        return response()->json([
-            'data' => [
-                'id' => $t->id,
+    $availableChat = $t->chatAvailabilities
+        ->where('is_active', true)
+        ->sortBy('day_of_week')
+        ->values();
 
-                'user' => [
-                    'id'     => $t->user?->id,
-                    'name'   => $t->user?->name,
-                    'email'  => $t->user?->email,
-                    'avatar' => $t->user?->avatar,
-                ],
+    return response()->json([
+        'data' => [
+            'id' => $t->id,
+            'user' => [
+                'id'     => $t->user?->id,
+                'name'   => $t->user?->name,
+                'email'  => $t->user?->email,
+                'avatar' => $t->user?->avatar,
+            ],
+            'specialty'        => $t->specialtyText,
+            'bio'              => $t->bioText,
+            'price_cents'      => $t->price_cents,
+            'currency'         => $t->currency,
+            'rating_avg'       => $t->rating_avg,
+            'rating_count'     => $t->rating_count,
+            'is_active'        => $t->is_active,
+            'years_experience' => $t->years_experience,
+            'languages'        => $t->languages,
 
-                'specialty'        => $t->specialtyText,
-                'bio'              => $t->bioText,
-                'price_cents'      => $t->price_cents,
-                'currency'         => $t->currency,
-                'rating_avg'       => $t->rating_avg,
-                'rating_count'     => $t->rating_count,
-                'is_active'        => $t->is_active,
-                'years_experience' => $t->years_experience,
-                'languages'        => $t->languages,
-                'available_chat_from' => $t->available_chat_from ?? null,
-                'available_chat_to'   => $t->available_chat_to ?? null,
-            ]
-        ]);
-    }
+            // ✅ عربي/إنجليزي + label جاهز
+            'available_chat'   => TherapistChatAvailabilityResource::collection($availableChat),
+        ]
+    ]);
+}
 
     // ============================================
     //  AVAILABILITY CALENDAR

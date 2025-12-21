@@ -31,6 +31,7 @@ use App\Http\Controllers\Doctor\DoctorClientsController;
 use App\Http\Controllers\Doctor\ProfileController;
 use App\Http\Controllers\Doctor\SingleSessionManageController;
 use App\Http\Controllers\Doctor\DoctorChatController;
+use App\Http\Controllers\Doctor\ChatAvailabilityController;
 
 // Public
 use App\Http\Controllers\Public\TherapistController as PublicTherapist;
@@ -51,19 +52,26 @@ use App\Http\Controllers\UserNotificationSettingController;
 
 
 Route::prefix('auth')->group(function () {
-    Route::post('/register',          [AuthController::class, 'register']);
-    Route::post('/login',             [AuthController::class, 'login']);
+    Route::post('/register',[AuthController::class,'register']);
+    Route::post('/login',[AuthController::class,'login']);
 
-    Route::post('/email/verify-otp',  [AuthController::class, 'verifyEmailOtp']);
-    Route::post('/email/resend-otp',  [AuthController::class, 'resendEmailOtp']);
+    Route::post('/email/verify',[AuthController::class,'verifyEmailOtp']);
+    Route::post('/email/resend',[AuthController::class,'resendEmailOtp']);
 
-    Route::post('/password/email',    [AuthController::class, 'sendResetLink']);
-    Route::post('/password/reset',    [AuthController::class, 'resetPassword']);
+    Route::post('/password/otp',[AuthController::class,'sendPasswordOtp']);
+    Route::post('/password/reset-otp',[AuthController::class,'resetPasswordWithOtp']);
 
-    Route::middleware('auth:sanctum')->group(function () {
-        Route::get('/me',    [AuthController::class, 'me']);
-        Route::post('/logout',[AuthController::class, 'logout']);
-    });
+    Route::post('/forgot-password/dashboard', [AuthController::class, 'sendDashboardResetToken']);
+    Route::post('/reset-password/dashboard', [AuthController::class, 'resetDashboardPassword']);
+
+
+    Route::post('/auth/refresh',[AuthController::class,'refresh']);
+
+    Route::middleware('auth:sanctum')->post(
+        '/logout',
+        [AuthController::class,'logout']
+    );
+
 });
 
 // ===== Admin(requires role:admin) =====
@@ -184,6 +192,8 @@ Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(funct
     // edit in on day {id from table therapist-schedules}
     Route::patch('/schedules/{id}',   [ScheduleController::class, 'update']);
     Route::delete('/schedules/{id}',  [ScheduleController::class, 'destroy']);
+    Route::put('schedule/replace', [ScheduleController::class, 'replace']);
+
     // timeoffs
     Route::get('/timeoffs',           [TimeoffController::class, 'index']);
     Route::post('/timeoffs',          [TimeoffController::class, 'store']);
@@ -232,6 +242,16 @@ Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(funct
     Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
     Route::post('chats/{chat}/read',     [ChatMessageController::class, 'read']);
 });
+
+     Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(function () {
+        Route::get('chat-availability', [ChatAvailabilityController::class, 'index']);
+        Route::post('chat-availability', [ChatAvailabilityController::class, 'store']);
+        Route::patch('chat-availability/{day}', [ChatAvailabilityController::class, 'update']);
+        Route::delete('chat-availability/{day}', [ChatAvailabilityController::class, 'destroy']);
+
+        // ✅ bulk replace
+        Route::put('chat-availability', [ChatAvailabilityController::class, 'replace']);
+    });
 
 // ===== Public =====
 Route::get('/home/banners', [homeController::class, 'homebanner']);
