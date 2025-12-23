@@ -28,13 +28,29 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => EnsureRole::class,
         ]);
     })
-    ->withExceptions(function (Exceptions $exceptions) {
-        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, $request) {
-            if ($request->expectsJson()) {
-                return response()->json([
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-        });
-    })
+   ->withExceptions(function (Exceptions $exceptions) {
+
+    // ✅ 401 لو مفيش auth
+    $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, $request) {
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
+    });
+
+    // ✅ 403 لو role middleware منع
+    $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException $e, $request) {
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+    });
+
+    // ✅ 403 لو Authorization فشل
+    $exceptions->render(function (\Illuminate\Auth\Access\AuthorizationException $e, $request) {
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+    });
+
+})
+
     ->create();
