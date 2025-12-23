@@ -65,7 +65,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/reset-password/dashboard', [AuthController::class, 'resetDashboardPassword']);
 
 
-    Route::post('/auth/refresh',[AuthController::class,'refresh']);
+    Route::post('/refresh',[AuthController::class,'refresh']);
 
     Route::middleware('auth:sanctum')->post(
         '/logout',
@@ -286,16 +286,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
 });
 
 
-// Webhook من Paymob (من غير auth)
-Route::post('/payments/paymob/webhook', [PaymentsController::class, 'webhook']);
-
-// لازم يكون اليوزر عامل login عشان يدفع
-Route::middleware(['auth:sanctum'])->group(function () {
-    Route::post('/payments', [PaymentsController::class, 'create']);
-
-    // Fake success للـ local testing
-    Route::post('/payments/{payment}/fake-success', [PaymentsController::class, 'fakeSuccess']);
+// payment with kashier
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('payments/kashier', [PaymentsController::class, 'createKashier']);
 });
+
+Route::get('payments/kashier/callback', [PaymentsController::class, 'callback']);
+Route::post('payments/kashier/webhook', [PaymentsController::class, 'webhook']);
 Route::middleware('auth:sanctum')->group(function () {
 
     // فتح / الحصول على شات الـ support

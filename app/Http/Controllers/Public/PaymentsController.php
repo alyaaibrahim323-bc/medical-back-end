@@ -7,76 +7,58 @@ use App\Models\Payment;
 use App\Models\TherapySession;
 use App\Models\Package;
 use App\Models\UserPackage;
-use App\Services\PaymobService;
+use App\Services\KashierService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use App\Services\NotificationService;
 
 class PaymentsController extends Controller
 {
-   /**
-     * POST api/payments
+    /**
+     * POST /api/payments/kashier
      * body:
-     *   purpose: single_session | package
-     *   id:      therapy_session_id OR package_id
-     *
-     * مثال:
-     *  {
-     *    "purpose": "single_session",
-     *    "id": 12
-     *  }
-     *
-     *  {
-     *    "purpose": "package",
-     *    "id": 3
-     *  }
+     * { "purpose":"single_session","id":12 }
+     * { "purpose":"package","id":3 }
      */
-    public function create(Request $r, PaymobService $paymob)
+    public function createKashier(Request $r, KashierService $kashier)
     {
         $data = $r->validate([
             'purpose' => ['required','in:single_session,package'],
             'id'      => ['required','integer'],
-            // 👈 مفيش billing فى الـ request
         ]);
 
         $user = $r->user();
 
-        // =============================
-        // 1) حدد الهدف والمبلغ + payload
-        // =============================
-        $therapistId      = null;
+        // 1) compute amount + payload (بدون تفاصيل UI)
+        $therapistId = null;
         $therapySessionId = null;
-        $userPackageId    = null;
-        $amount           = 0;
-        $payload          = [];
+        $userPackageId = null;
+        $amount = 0;
+        $payload = [];
 
         if ($data['purpose'] === Payment::PURPOSE_SINGLE_SESSION) {
-            // الجلسة اللى اتعملت قبل كده فى TherapySessionController
             $session = TherapySession::with('therapist')
                 ->where('user_id', $user->id)
                 ->findOrFail($data['id']);
 
-            if ($session->status !== TherapySession::STATUS_PENDING) {
-                return response()->json(['message'=>'Session not payable'], 422);
+            if (($session->status ?? null) !== 'pending') {
+                return response()->json(['message' => 'Session not payable'], 422);
             }
 
             $sessionFee = (int) ($session->therapist->price_cents ?? 0);
             $serviceFee = (int) config('fees.single_session_service_cents', 0);
-            $amount     = $sessionFee + $serviceFee;
+            $amount = $sessionFee + $serviceFee;
 
-            $therapistId      = $session->therapist_id;
+            $therapistId = $session->therapist_id;
             $therapySessionId = $session->id;
 
             $payload = [
-                'session_fee_cents'  => $sessionFee,
-                'service_fee_cents'  => $serviceFee,
-                'session_id'         => $session->id,
-                'therapist_id'       => $session->therapist_id,
-                'user_id'            => $user->id,
+                'type' => 'single_session',
+                'session_fee_cents' => $sessionFee,
+                'service_fee_cents' => $serviceFee,
+                'session_id' => $session->id,
             ];
         } else {
-            // شراء Package
             $package = Package::where('is_active', true)->findOrFail($data['id']);
 
             $therapistId = $package->created_by_therapist_id;
@@ -86,289 +68,179 @@ class PaymentsController extends Controller
             $payable   = (int) round($basePrice * (100 - $discount) / 100);
 
             $serviceFee = (int) config('fees.package_service_cents', 0);
-            $amount     = $payable + $serviceFee;
+            $amount = $payable + $serviceFee;
 
             $payload = [
-                'package_id'          => $package->id,
-                'base_price_cents'    => $basePrice,
-                'discount_percent'    => $discount,
-                'payable_cents'       => $payable,
-                'service_fee_cents'   => $serviceFee,
-                'sessions_count'      => $package->sessions_count,
-                'session_duration_min'=> $package->session_duration_min,
-                'validity_days'       => $package->validity_days,
-                'user_id'             => $user->id,
-                'therapist_id'        => $therapistId,
+                'type' => 'package',
+                'package_id' => $package->id,
+                'base_price_cents' => $basePrice,
+                'discount_percent' => $discount,
+                'payable_cents' => $payable,
+                'service_fee_cents' => $serviceFee,
             ];
         }
 
-        // =============================
-        // 2) MOCK MODE → نجاح فورى بدون Paymob
-        // =============================
-        if (config('payments.mock')) {
-            $reference = strtoupper(Str::random(10));
-
-            /** @var Payment $payment */
-            $payment = DB::transaction(function () use (
-                $user,
-                $therapistId,
-                $therapySessionId,
-                $userPackageId,
-                $data,
-                $amount,
-                $reference,
-                $payload
-            ) {
-                return Payment::create([
-                    'user_id'            => $user->id,
-                    'therapist_id'       => $therapistId,
-                    'therapy_session_id' => $therapySessionId,
-                    'user_package_id'    => $userPackageId,
-                    'purpose'            => $data['purpose'],
-                    'amount_cents'       => $amount,
-                    'currency'           => 'EGP',
-                    // ⭐ خلى القيمة دى تماتش الـ ENUM عندك
-                    'provider'           => 'paymob', // أو خلى العمود يقبل 'mock'
-                    'status'             => Payment::STATUS_PAID,
-                    'reference'          => $reference,
-                    'paid_at'            => now(),
-                    'payload'            => array_merge($payload, [
-                        'mock' => true,
-                    ]),
-                ]);
-            });
-
-            // نطبق البزنس لوجك بعد الدفع
-            $this->applyBusinessLogicAfterPayment($payment);
-
-            return response()->json([
-                'message' => 'Mock payment success (no Paymob call).',
-                'data' => [
-                    'payment_id'   => $payment->id,
-                    'reference'    => $payment->reference,
-                    'amount_cents' => $payment->amount_cents,
-                    'currency'     => $payment->currency,
-                    'purpose'      => $payment->purpose,
-                    'paymob'       => null,
-                ],
-            ], 201);
-        }
-
-        // =============================
-        // 3) السيناريو الحقيقى مع Paymob
-        //    (من غير ما الفرونت يبعت billing)
-        // =============================
+        // 2) create pending payment
         $reference = strtoupper(Str::random(10));
 
         $payment = DB::transaction(function () use (
-            $user,
-            $therapistId,
-            $therapySessionId,
-            $userPackageId,
-            $data,
-            $amount,
-            $reference,
-            $payload
+            $user, $therapistId, $therapySessionId, $userPackageId, $data, $amount, $reference, $payload
         ) {
             return Payment::create([
-                'user_id'            => $user->id,
-                'therapist_id'       => $therapistId,
+                'user_id' => $user->id,
+                'therapist_id' => $therapistId,
                 'therapy_session_id' => $therapySessionId,
-                'user_package_id'    => $userPackageId,
-                'purpose'            => $data['purpose'],
-                'amount_cents'       => $amount,
-                'currency'           => 'EGP',
-                'provider'           => 'paymob',
-                'status'             => Payment::STATUS_PENDING,
-                'reference'          => $reference,
-                'payload'            => $payload,
+                'user_package_id' => $userPackageId,
+                'purpose' => $data['purpose'],
+                'amount_cents' => $amount,
+                'currency' => 'EGP',
+                'provider' => 'kashier',
+                'status' => Payment::STATUS_PENDING,
+                'reference' => $reference,
+                'payload' => $payload,
             ]);
         });
 
-        // ⭐ نكوّن الـ billing جوه الباك إند من بيانات اليوزر
-        $billing = [
-            'first_name'      => $user->name ?? 'User',
-            'last_name'       => 'Customer',
-            'email'           => $user->email,
-            'phone_number'    => $user->phone ?? 'NA',
-            'apartment'       => 'NA',
-            'floor'           => 'NA',
-            'street'          => 'NA',
-            'building'        => 'NA',
-            'shipping_method' => 'NA',
-            'postal_code'     => '00000',
-            'city'            => 'Cairo',
-            'country'         => 'EG',
-            'state'           => 'Cairo',
+        // 3) build checkout URL params
+        $params = [
+            'merchantId'  => $kashier->merchantId(),
+            'orderId'     => $payment->reference,       // ✅ merchant order reference
+            'amount'      => $payment->amount_cents,    // ✅ cents
+            'currency'    => $payment->currency,
+            'mode'        => $kashier->mode(),
+            'redirectUrl' => $kashier->redirectUrl(),
+            // 'webhookUrl'  => $kashier->webhookUrl(),  // لو Kashier بيسمح
         ];
 
-        // Paymob: auth → order → payment_key
-        $token   = $paymob->auth();
-        $order   = $paymob->createOrder($token, $amount, $payment->reference, []);
-        $orderId = $order['id'] ?? null;
+        // 4) sign
+        $params['signature'] = $kashier->makeSignature($params);
 
-        $pk = $paymob->paymentKey($token, $amount, $orderId, $billing);
-
-        $payment->update([
-            'provider_order_id' => (string) $orderId,
-            'payload'           => array_merge($payment->payload ?? [], [
-                'billing' => $billing,
-            ]),
-        ]);
+        // 5) return checkout url
+        $checkoutUrl = $kashier->checkoutUrl($params);
 
         return response()->json([
             'message' => 'Payment initiated',
             'data' => [
-                'payment_id'   => $payment->id,
-                'reference'    => $payment->reference,
-                'amount_cents' => $payment->amount_cents,
-                'currency'     => $payment->currency,
-                'purpose'      => $payment->purpose,
-                'paymob'       => [
-                    'order_id'    => $orderId,
-                    'payment_key' => $pk['token'] ?? null,
-                    'iframe_url'  => $pk['token'] ? $paymob->iframeUrl($pk['token']) : null,
-                ],
-            ],
+                'payment_id'  => $payment->id,
+                'reference'   => $payment->reference,
+                'amount_cents'=> $payment->amount_cents,
+                'currency'    => $payment->currency,
+                'checkout_url'=> $checkoutUrl,
+            ]
         ], 201);
     }
-protected function applyBusinessLogicAfterPayment(Payment $payment): void
-{
-    /** @var NotificationService $notifications */
-    $notifications = app(NotificationService::class);
 
-    // 1) Single Session
-    if ($payment->purpose === Payment::PURPOSE_SINGLE_SESSION && $payment->therapy_session_id) {
-        $session = TherapySession::with('therapist.user')->find($payment->therapy_session_id);
+    /**
+     * GET /api/payments/kashier/callback
+     * ده redirect للـ user بعد الدفع (UI). Source of truth: webhook.
+     */
+    public function callback(Request $r, KashierService $kashier)
+    {
+        $incoming = $r->all();
 
-        if ($session && $payment->status === Payment::STATUS_PAID) {
-            $session->update([
-                'status' => TherapySession::STATUS_CONFIRMED,
+        // signature verify if provided
+        $sig = (string)($incoming['signature'] ?? $incoming['hash'] ?? '');
+        if ($sig && !$kashier->verifySignature($incoming, $sig)) {
+            return response()->json(['message' => 'Invalid signature'], 401);
+        }
+
+        $orderId = (string)($incoming['orderId'] ?? '');
+        if (!$orderId) return response()->json(['message' => 'Missing orderId'], 422);
+
+        $payment = Payment::where('reference', $orderId)->first();
+        if (!$payment) return response()->json(['message' => 'Payment not found'], 404);
+
+        return response()->json([
+            'message' => 'Callback received',
+            'data' => [
+                'reference' => $payment->reference,
+                'status'    => $payment->status,
+                'raw'       => $incoming,
+            ],
+        ]);
+    }
+
+    /**
+     * POST /api/payments/kashier/webhook
+     * ده اللي بيحدد paid/failed بشكل نهائي.
+     */
+    public function webhook(Request $r, KashierService $kashier)
+    {
+        $incoming = $r->all();
+
+        $sig = (string)($incoming['signature'] ?? $incoming['hash'] ?? '');
+        if ($sig && !$kashier->verifySignature($incoming, $sig)) {
+            return response()->json(['message' => 'Invalid signature'], 401);
+        }
+
+        $orderId = (string)($incoming['orderId'] ?? '');
+        if (!$orderId) return response()->json(['message' => 'Missing orderId'], 422);
+
+        DB::transaction(function () use ($incoming, $orderId) {
+            /** @var Payment $payment */
+            $payment = Payment::where('reference', $orderId)->lockForUpdate()->firstOrFail();
+
+            // ✅ idempotent
+            if ($payment->status === Payment::STATUS_PAID) {
+                return;
+            }
+
+            // TODO: map Kashier success flag
+            $success = (bool)($incoming['success'] ?? $incoming['paid'] ?? false);
+
+            $payment->update([
+                'status' => $success ? Payment::STATUS_PAID : Payment::STATUS_FAILED,
+                'paid_at' => $success ? now() : null,
+                'failed_at' => $success ? null : now(),
+                'provider_order_id' => (string)($incoming['kashierOrderId'] ?? $payment->provider_order_id),
+                'provider_transaction_id' => (string)($incoming['transactionId'] ?? $payment->provider_transaction_id),
+                'provider_payment_id' => (string)($incoming['paymentId'] ?? $payment->provider_payment_id),
+                'payload' => array_merge($payment->payload ?? [], ['kashier_webhook' => $incoming]),
             ]);
 
-            $notifications->sendToUser(
-                $payment->user_id,
-                'payment_success',
-                [
-                    'amount' => $payment->amount_cents / 100,
-                    'item'   => 'Single session with ' . ($session->therapist->user->name ?? 'therapist'),
-                ]
-            );
+            if ($success) {
+                $this->applyBusinessLogicAfterPaid($payment->fresh());
+            }
+        });
 
-            $notifications->sendToUser(
-                $payment->user_id,
-                'session_upcoming',
-                [
-                    'doctor' => $session->therapist->user->name ?? 'therapist',
-                    'time'   => $session->scheduled_at->format('g:i A'),
-                ]
-            );
-        }
-
-        if ($session && $payment->status === Payment::STATUS_FAILED) {
-            $notifications->sendToUser(
-                $payment->user_id,
-                'payment_failed',
-                [
-                    'amount' => $payment->amount_cents / 100,
-                    'item'   => 'Single session',
-                ]
-            );
-        }
-
-        return;
+        return response()->json(['message' => 'ok']);
     }
 
-    // 2) Package
-    if ($payment->purpose === Payment::PURPOSE_PACKAGE) {
-
-        if ($payment->status === Payment::STATUS_FAILED) {
-            $notifications->sendToUser(
-                $payment->user_id,
-                'payment_failed',
-                [
-                    'amount' => $payment->amount_cents / 100,
-                    'item'   => 'Package',
-                ]
-            );
+    /**
+     * ✅ Confirm session OR create user_package
+     */
+    protected function applyBusinessLogicAfterPaid(Payment $payment): void
+    {
+        // خليها idempotent (متكررش)
+        if ($payment->purpose === Payment::PURPOSE_SINGLE_SESSION && $payment->therapy_session_id) {
+            $session = TherapySession::find($payment->therapy_session_id);
+            if ($session && ($session->status ?? null) !== 'confirmed') {
+                $session->update(['status' => 'confirmed']);
+            }
             return;
         }
 
-        if ($payment->status !== Payment::STATUS_PAID) {
-            return;
+        if ($payment->purpose === Payment::PURPOSE_PACKAGE) {
+            if ($payment->user_package_id) return;
+
+            $packageId = $payment->payload['package_id'] ?? null;
+            if (!$packageId) return;
+
+            $package = Package::find($packageId);
+            if (!$package) return;
+
+            $userPackage = UserPackage::create([
+                'user_id' => $payment->user_id,
+                'package_id' => $package->id,
+                'therapist_id' => $payment->therapist_id,
+                'sessions_total' => $package->sessions_count,
+                'sessions_used' => 0,
+                'status' => 'active',
+                'purchased_at' => now(),
+                'expires_at' => $package->validity_days ? now()->addDays($package->validity_days) : null,
+            ]);
+
+            $payment->update(['user_package_id' => $userPackage->id]);
         }
-
-        // لو عندك user_package_id موجود
-        if ($payment->user_package_id) {
-            $notifications->sendToUser(
-                $payment->user_id,
-                'payment_success',
-                [
-                    'amount' => $payment->amount_cents / 100,
-                    'item'   => 'Package',
-                ]
-            );
-            return;
-        }
-
-        $payData   = $payment->payload ?? [];
-        $packageId = $payData['package_id'] ?? null;
-
-        if (!$packageId) {
-            return;
-        }
-
-        /** @var Package|null $package */
-        $package = Package::find($packageId);
-        if (!$package) {
-            return;
-        }
-
-        $sessionsCount = $package->sessions_count;
-        $validityDays  = $package->validity_days;
-
-        $userPackage = UserPackage::create([
-            'user_id'        => $payment->user_id,
-            'package_id'     => $package->id,
-            'therapist_id'   => $payment->therapist_id,
-            'sessions_total' => $sessionsCount,
-            'sessions_used'  => 0,
-            'status'         => 'active',
-            'purchased_at'   => now(),
-            'expires_at'     => $validityDays ? now()->addDays($validityDays) : null,
-        ]);
-
-        $payment->update([
-            'user_package_id' => $userPackage->id,
-        ]);
-
-        // 👇 هنا التعديل المهم
-        // name ممكن تكون JSON (array) أو string
-        $rawName = $package->name;
-
-        if (is_array($rawName)) {
-            // لو متخزنة JSON
-            $nameEn = $rawName['en'] ?? null;
-            $nameAr = $rawName['ar'] ?? null;
-            $name   = $nameEn ?? $nameAr ?? reset($rawName);
-        } else {
-            $name = $rawName;
-        }
-
-        $itemLabel = trim('Package ' . ($name ?? ''));
-
-        $notifications->sendToUser(
-            $payment->user_id,
-            'payment_success',
-            [
-                'amount' => $payment->amount_cents / 100,
-                'item'   => $itemLabel,
-            ]
-        );
     }
-}
-
-
-
-    // ... باقى الكنترولر زى ما هو (webhook, fakeSuccess, applyBusinessLogicAfterPayment ...)
 }

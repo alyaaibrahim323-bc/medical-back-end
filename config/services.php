@@ -36,13 +36,15 @@ return [
     ],
 
     // config/services.php
-  'paymob' => [
-    'api_key'            => env('PAYMOB_API_KEY'),
-    'base_url'           => env('PAYMOB_BASE_URL', 'https://accept.paymob.com/api'),
-    'hmac'               => env('PAYMOB_HMAC'),
-    'integration_id_card'=> env('PAYMOB_INTEGRATION_ID_CARD'),
-    'iframe_id'          => env('PAYMOB_IFRAME_ID'),
+ 'kashier' => [
+  'base_url'     => env('KASHIER_BASE_URL','https://payments.kashier.io'),
+  'merchant_id'  => env('KASHIER_MERCHANT_ID'),
+  'secret'       => env('KASHIER_SECRET'),
+  'mode'         => env('KASHIER_MODE','test'),
+  'redirect_url' => env('KASHIER_REDIRECT_URL'),
+  'webhook_url'  => env('KASHIER_WEBHOOK_URL'),
 ],
+
 
 
 

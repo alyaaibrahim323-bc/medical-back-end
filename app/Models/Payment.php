@@ -7,36 +7,23 @@ use Illuminate\Database\Eloquent\Model;
 class Payment extends Model
 {
     protected $fillable = [
-        'user_id',
-        'therapist_id',
-        'therapy_session_id',
-        'user_package_id',
-        'purpose',
-        'amount_cents',
-        'currency',
-        'provider',
-        'provider_order_id',
-        'provider_transaction_id',
-        'status',
-        'paid_at',
-        'failed_at',
-        'refunded_at',
-        'payload',
-        'reference',
+        'user_id','therapist_id','therapy_session_id','user_package_id',
+        'purpose','amount_cents','currency',
+        'provider','provider_order_id','provider_transaction_id','provider_payment_id',
+        'status','paid_at','failed_at','refunded_at',
+        'payload','reference',
     ];
 
     protected $casts = [
+        'payload'     => 'array',
         'paid_at'     => 'datetime',
         'failed_at'   => 'datetime',
         'refunded_at' => 'datetime',
-        'payload'     => 'array',
     ];
 
-    // الأغراض (single session / package)
     public const PURPOSE_SINGLE_SESSION = 'single_session';
     public const PURPOSE_PACKAGE        = 'package';
 
-    // حالات الدفع
     public const STATUS_PENDING  = 'pending';
     public const STATUS_PAID     = 'paid';
     public const STATUS_FAILED   = 'failed';
