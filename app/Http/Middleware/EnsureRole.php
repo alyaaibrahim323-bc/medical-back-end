@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 
 class EnsureRole
 {
-    public function handle(Request $request, Closure $next, string $role)
+    public function handle(Request $request, Closure $next, ...$roles)
     {
         $user = $request->user();
 
@@ -15,8 +15,8 @@ class EnsureRole
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
-        // قبول الدور سواء عبر Spatie أو عمود role
-        if (!($user->hasRole($role) || $user->role === $role)) {
+        // role ممكن تكون string واحدة
+        if (!in_array($user->role, $roles, true)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
