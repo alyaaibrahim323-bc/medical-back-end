@@ -9,7 +9,6 @@ use App\Models\Quote;
 
 class homeController extends Controller
 {
-    // GET /home/banners
     public function homebanner()
     {
         $rows = Banner::active()

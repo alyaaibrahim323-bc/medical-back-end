@@ -13,15 +13,12 @@ use Illuminate\Http\Request;
 
 class TherapistController extends Controller
 {
-    // ============================================
-    //  LIST + SEARCH
-    // ============================================
+
     public function index(Request $request)
     {
         $q = Therapist::with('user')
             ->where('is_active', true)
 
-            // SEARCH q= (name OR specialty EN/AR)
             ->when($request->filled('q'), function ($x) use ($request) {
                 $kw = '%' . $request->q . '%';
 
@@ -34,7 +31,7 @@ class TherapistController extends Controller
                 });
             })
 
-            // Filter specialty
+           
             ->when($request->filled('specialty'), function ($x) use ($request) {
                 $kw = '%' . $request->specialty . '%';
                 $x->where(function ($y) use ($kw) {
@@ -43,7 +40,6 @@ class TherapistController extends Controller
                 });
             })
 
-            // Price range
             ->when($request->filled('price_min'), fn ($x) =>
                 $x->where('price_cents', '>=', (int) $request->price_min)
             )
@@ -51,7 +47,6 @@ class TherapistController extends Controller
                 $x->where('price_cents', '<=', (int) $request->price_max)
             )
 
-            // Minimum rating
             ->when($request->filled('rating_min'), fn ($x) =>
                 $x->where('rating_avg', '>=', (float) $request->rating_min)
             )
@@ -59,10 +54,8 @@ class TherapistController extends Controller
             ->orderByDesc('rating_avg')
             ->orderBy('price_cents');
 
-        // Paginate first
         $paginated = $q->paginate(20);
 
-        // Transform each Therapist into localized structure
         $paginated->setCollection(
             $paginated->getCollection()->map(function (Therapist $t) {
                 return [
@@ -92,9 +85,7 @@ class TherapistController extends Controller
         return response()->json($paginated);
     }
 
-    // ============================================
-    //  DETAILS
-    // ============================================
+
     public function show($id)
 {
     $t = Therapist::with(['user','chatAvailabilities'])
@@ -125,15 +116,12 @@ class TherapistController extends Controller
             'years_experience' => $t->years_experience,
             'languages'        => $t->languages,
 
-            // ✅ عربي/إنجليزي + label جاهز
             'available_chat'   => TherapistChatAvailabilityResource::collection($availableChat),
         ]
     ]);
 }
 
-    // ============================================
-    //  AVAILABILITY CALENDAR
-    // ============================================
+    
     public function availability($id, Request $request, TherapistAvailabilityService $availability)
     {
         $request->validate([
@@ -180,9 +168,7 @@ class TherapistController extends Controller
         return response()->json(['data' => $normalized]);
     }
 
-    // ============================================
-    //  PACKAGES (TAB)
-    // ============================================
+    
     public function packages($id)
     {
         $items = Package::where('is_active', true)
@@ -205,9 +191,7 @@ class TherapistController extends Controller
         return response()->json(['data' => $items]);
     }
 
-    // ============================================
-    //  SINGLE SESSION OFFER (TAB)
-    // ============================================
+
     public function singleSession($id)
     {
         $offer = SingleSessionOffer::where('therapist_id', $id)

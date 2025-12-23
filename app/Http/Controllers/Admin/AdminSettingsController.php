@@ -11,9 +11,7 @@ use Illuminate\Validation\Rule;
 
 class AdminSettingsController extends Controller
 {
-    /**
-     * GET /api/admin/me
-     */
+    
     public function show(Request $r)
     {
         $admin = $r->user();
@@ -35,10 +33,7 @@ class AdminSettingsController extends Controller
         ]);
     }
 
-    /**
-     * ✏️ PATCH /api/admin/me/profile
-     * تعديل الاسم / الإيميل / الموبايل فقط
-     */
+    
     public function updateProfile(Request $r)
     {
         $admin = $r->user();
@@ -60,10 +55,6 @@ class AdminSettingsController extends Controller
         ]);
     }
 
-    /**
-     * 🖼 PATCH /api/admin/me/avatar
-     * تعديل الصورة فقط
-     */
     public function updateAvatar(Request $r)
     {
         $admin = $r->user();
@@ -89,9 +80,6 @@ class AdminSettingsController extends Controller
         ]);
     }
 
-    /**
-     * 🔐 PATCH /api/admin/me/password
-     */
     public function updatePassword(Request $r)
     {
         $admin = $r->user();

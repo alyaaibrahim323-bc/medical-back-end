@@ -13,8 +13,8 @@ class MePackagesController extends Controller
                 'package',
                 'therapist.user',
                 'user',
-                'payments',      // 🆕 عشان بلوك payment فى ال Resource
-                'redemptions',   // (اختياري) لو محتاجة تشوفيها فى الليست
+                'payments',      
+                'redemptions',   
             ])
             ->where('user_id', auth()->id())
             ->orderByDesc('id');
@@ -28,7 +28,7 @@ class MePackagesController extends Controller
                 'package',
                 'therapist.user',
                 'user',
-                'payments',      // 🆕 برضه هنا
+                'payments',     
                 'redemptions',
             ])
             ->where('user_id', auth()->id())

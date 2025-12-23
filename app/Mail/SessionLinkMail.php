@@ -19,6 +19,6 @@ class SessionLinkMail extends Mailable
     public function build()
     {
         return $this->subject('Your Therapy Session Link')
-            ->view('emails.session_link'); // هنضيفه تحت
+            ->view('emails.session_link'); 
     }
 }

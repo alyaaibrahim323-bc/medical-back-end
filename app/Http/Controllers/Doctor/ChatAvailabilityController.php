@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 
 class ChatAvailabilityController extends Controller
 {
-    // GET /doctor/me/chat-availability
+  
     public function index(Request $r)
     {
         $t = $r->user()->therapist()->firstOrFail();
@@ -23,10 +23,6 @@ class ChatAvailabilityController extends Controller
         ]);
     }
 
-    /**
-     * POST /doctor/me/chat-availability
-     * upsert لأيام متعددة (مودال الداشبورد)
-     */
     public function store(Request $r)
     {
         $t = $r->user()->therapist()->firstOrFail();
@@ -58,7 +54,7 @@ class ChatAvailabilityController extends Controller
         ]);
     }
 
-    // PATCH /doctor/me/chat-availability/{day}
+
     public function update(Request $r, int $day)
     {
         $t = $r->user()->therapist()->firstOrFail();
@@ -82,7 +78,6 @@ class ChatAvailabilityController extends Controller
         ]);
     }
 
-    // DELETE /doctor/me/chat-availability/{day}
     public function destroy(Request $r, int $day)
     {
         $t = $r->user()->therapist()->firstOrFail();
@@ -95,18 +90,7 @@ class ChatAvailabilityController extends Controller
         return response()->json(['message' => 'Deleted']);
     }
 
-    /**
-     * ✅ BULK REPLACE
-     * PUT /doctor/me/chat-availability
-     * Body:
-     * {
-     *   "items": [
-     *     {"day_of_week":0,"from_time":"12:00","to_time":"16:00","is_active":true},
-     *     {"day_of_week":1,"from_time":"18:00","to_time":"20:00"}
-     *   ]
-     * }
-     * - يمسح القديم بالكامل ويكتب الجديد
-     */
+   
     public function replace(Request $r)
 {
     $t = $r->user()->therapist()->firstOrFail();
@@ -121,10 +105,10 @@ class ChatAvailabilityController extends Controller
 
     $isActive = $data['is_active'] ?? true;
 
-    // 1) delete all old
+
     TherapistChatAvailability::where('therapist_id', $t->id)->delete();
 
-    // 2) create new for selected days
+ 
     foreach (array_unique($data['days']) as $day) {
         TherapistChatAvailability::create([
             'therapist_id' => $t->id,

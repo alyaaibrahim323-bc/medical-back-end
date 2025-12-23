@@ -24,7 +24,7 @@ class SingleSessionManageController extends Controller
 
     public function store(Request $r)
     {
-        $therapist = $r->user()->therapist; // عشان نحدّث جدول therapists
+        $therapist = $r->user()->therapist;
         $tid       = $therapist->id;
 
         $data = $r->validate([
@@ -35,13 +35,11 @@ class SingleSessionManageController extends Controller
             'is_active'        => ['boolean'],
         ]);
 
-        // 1) نحفظ / نحدّث العرض في جدول single_session_offers
         $offer = SingleSessionOffer::updateOrCreate(
             ['therapist_id' => $tid],
             $data + ['is_active' => $data['is_active'] ?? true]
         );
 
-        // 2) نحدّث نفس السعر والعملة في جدول therapists (ده اللي إنتِ عايزاه)
         $therapist->update([
             'price_cents' => $data['price_cents'],
             'currency'    => $data['currency'],
@@ -65,10 +63,8 @@ class SingleSessionManageController extends Controller
             'is_active'        => ['sometimes','boolean'],
         ]);
 
-        // 1) نحدّث الـ offer
         $offer->update($data);
 
-        // 2) لو السعر/العملة اتبعتوا في الريكوست → عدلهم في therapists برضه
         $therapistUpdate = [];
 
         if (isset($data['price_cents'])) {

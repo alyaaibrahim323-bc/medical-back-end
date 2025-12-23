@@ -10,13 +10,12 @@ use Illuminate\Http\Request;
 
 class DoctorClientsController extends Controller
 {
-    // قائمة كل المشتركين في باكيدجات هذا الدكتور
-    // فلاتر اختيارية: ?package_id= & ?active=true/false & ?q=اسم_العميل/الإيميل
+
 public function subscriptions(Request $r)
 {
     $therapistId = $r->user()->therapist->id;
 
-    // ✅ Search helper (using ?search=)
+   
     $applySearch = function ($q) use ($r) {
         if (!$r->filled('search')) return;
 
@@ -25,14 +24,12 @@ public function subscriptions(Request $r)
 
         $q->where(function ($qq) use ($term, $kw) {
 
-            // 1) user name / email / phone
             $qq->whereHas('user', function ($u) use ($kw) {
                 $u->where('name', 'like', $kw)
                   ->orWhere('email', 'like', $kw)
                   ->orWhere('phone', 'like', $kw);
             })
 
-            // 2) package name (JSON en/ar)
             ->orWhereHas('package', function ($p) use ($kw) {
                 $p->whereRaw(
                         "JSON_UNQUOTE(JSON_EXTRACT(name, '$.en')) LIKE ?",
@@ -44,7 +41,6 @@ public function subscriptions(Request $r)
                     );
             });
 
-            // 3) direct id search
             if (ctype_digit($term)) {
                 $qq->orWhere('id', (int) $term);
             }
@@ -64,17 +60,14 @@ public function subscriptions(Request $r)
             fn($x) => $x->where('package_id', $r->integer('package_id'))
         );
 
-    // ✅ search affects counts
     $applySearch($base);
 
-    // ✅ counts
     $counts = [
         'all'     => (clone $base)->count(),
         'active'  => (clone $base)->where('status', 'active')->count(),
         'expired' => (clone $base)->where('status', 'expired')->count(),
     ];
 
-    // ✅ list
     $q = clone $base;
 
     $q->when($r->filled('status'), function ($x) use ($r) {
@@ -94,7 +87,6 @@ public function subscriptions(Request $r)
 
 
 
-    // تفاصيل اشتراك محدد
     public function subscriptionShow(Request $r, int $id)
     {
         $therapistId = $r->user()->therapist->id;
@@ -110,7 +102,6 @@ public function subscriptions(Request $r)
         return new UserPackageResource($p);
     }
 
-    // الجلسات التي استُخدمت من هذا الاشتراك (مع بعض البيانات)
     public function subscriptionSessions(Request $r, int $id)
     {
         $therapistId = $r->user()->therapist->id;

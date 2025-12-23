@@ -15,7 +15,7 @@ class Therapist extends Model
     ];
 
     protected $casts = [
-        'specialty'      => 'array',  // {"en": "...", "ar": "..."}
+        'specialty'      => 'array',  
         'bio'            => 'array',
         'is_active'      => 'boolean',
         'rating_avg'     => 'float',

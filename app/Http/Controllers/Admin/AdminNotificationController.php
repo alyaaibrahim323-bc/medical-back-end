@@ -13,22 +13,13 @@ use Illuminate\Support\Carbon;
 
 class AdminNotificationController extends Controller
 {
-    /**
-     * GET /admin/notifications
-     * يدعم:
-     *  - status=sent|scheduled|draft
-     *  - from=2025-01-01
-     *  - to=2025-01-31
-     *  - search=string
-     */
+  
    public function index(Request $r)
 {
-    // ----- BASE QUERY (بدون status) -----
     $base = Notification::query()
         ->withCount('deliveries')
         ->orderByDesc('created_at');
 
-    // نفس الفلاتر (search / from / to) هتتطبّق على الـ counts والـ list
     if ($search = $r->query('search')) {
         $base->where(function ($qq) use ($search) {
             $qq->where('title_en', 'like', "%{$search}%")
@@ -46,7 +37,6 @@ class AdminNotificationController extends Controller
         $base->whereDate('created_at', '<=', $to);
     }
 
-    // ----- COUNTS لكل التابات -----
     $counts = [
         'all'       => (clone $base)->count(),
         'sent'      => (clone $base)->where('status', 'sent')->count(),
@@ -54,7 +44,6 @@ class AdminNotificationController extends Controller
         'draft'     => (clone $base)->where('status', 'draft')->count(),
     ];
 
-    // ----- LIST مع فلتر status لو موجود -----
     $q = clone $base;
 
     if ($status = $r->query('status')) {
@@ -70,10 +59,6 @@ class AdminNotificationController extends Controller
 }
 
 
-    /**
-     * GET /admin/notifications/{id}
-     * تفاصيل إشعار واحد
-     */
     public function show($id)
     {
         $notification = Notification::with(['deliveries','creator'])
@@ -83,22 +68,7 @@ class AdminNotificationController extends Controller
         return new NotificationResource($notification);
     }
 
-    /**
-     * POST /admin/notifications
-     * إنشاء + Send Now / Schedule
-     *
-     * Body مثال:
-     * {
-     *   "title_en": "System Update",
-     *   "title_ar": "تحديث في النظام",
-     *   "body_en": "We updated the app...",
-     *   "body_ar": "قمنا بتحديث التطبيق...",
-     *   "send_to": "all" | "specific",
-     *   "users": [1,2,3],                // required if send_to=specific
-     *   "schedule_type": "now" | "later",
-     *   "scheduled_at": "2025-11-25 15:00:00" // required if later
-     * }
-     */
+    
     public function store(Request $r)
     {
         $data = $r->validate([
@@ -121,7 +91,6 @@ class AdminNotificationController extends Controller
 
         $status = $scheduleType === 'now' ? 'sent' : 'scheduled';
 
-        // نخزن audience في data عشان الـ job يستخدمها للـ scheduled
         $extraData = [
             'send_to'  => $sendTo,
             'user_ids' => $sendTo === 'specific' ? $data['users'] : [],
@@ -140,7 +109,6 @@ class AdminNotificationController extends Controller
             'scheduled_at'=> $scheduledFor,
         ]);
 
-        // لو Send Now → نبعته فورًا
         if ($status === 'sent') {
             $this->deliverNotificationNow($notification);
         }
@@ -148,15 +116,11 @@ class AdminNotificationController extends Controller
         return new NotificationResource($notification);
     }
 
-    /**
-     * PATCH /admin/notifications/{id}
-     * تعديل إشعار (عادةً scheduled فقط)
-     */
+    
     public function update(Request $r, $id)
     {
         $notification = Notification::findOrFail($id);
 
-        // لو بعت قبل كده خلاص مش هنعدّله
         if ($notification->status === 'sent') {
             return response()->json([
                 'message' => 'Cannot edit a sent notification.',
@@ -174,7 +138,6 @@ class AdminNotificationController extends Controller
             'scheduled_at' => 'required_if:schedule_type,later|date',
         ]);
 
-        // نحدث الـ data (audience) لو اتغيّرت
         $currentData = $notification->data ?? [];
 
         if (isset($data['send_to'])) {
@@ -192,7 +155,6 @@ class AdminNotificationController extends Controller
             'data'     => $currentData,
         ]);
 
-        // لو اتغيّر الـ schedule_type
         if (isset($data['schedule_type'])) {
             if ($data['schedule_type'] === 'now') {
                 $notification->status       = 'sent';
@@ -217,18 +179,12 @@ class AdminNotificationController extends Controller
         return new NotificationResource($notification);
     }
 
-    /**
-     * DELETE /admin/notifications/{id}
-     * حذف إشعار (حتى لو كان sent)
-     */
+   
     public function destroy($id)
     {
         $notification = Notification::findOrFail($id);
 
-        // ممكن تختاري تمنعي حذف sent
-        // if ($notification->status === 'sent') {
-        //     return response()->json(['message' => 'Cannot delete sent notification'], 422);
-        // }
+     
 
         $notification->deliveries()->delete();
         $notification->delete();
@@ -236,9 +192,7 @@ class AdminNotificationController extends Controller
         return response()->json(['message' => 'Notification deleted']);
     }
 
-    /**
-     * إرسال إشعار فورًا (لـ Send Now أو لما يتحوّل من scheduled إلى now)
-     */
+  
     protected function deliverNotificationNow(Notification $notification): void
     {
         $data    = $notification->data ?? [];

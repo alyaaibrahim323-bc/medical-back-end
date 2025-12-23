@@ -34,23 +34,16 @@ class KashierService
         return (string) config('services.kashier.webhook_url');
     }
 
-    /**
-     * ✅ build hosted checkout url
-     * NOTE: Kashier params may differ slightly (حسب إعدادات حسابك).
-     */
+    
     public function checkoutUrl(array $params): string
     {
         return $this->baseUrl() . '/?' . http_build_query($params);
     }
 
-    /**
-     * ❗ TODO: Replace with Kashier official signature formula.
-     * هتجيبيها من داشبورد/Docs Kashier.
-     */
+
     public function makeSignature(array $params): string
     {
-        // مثال placeholder (غير مضمون):
-        // sha256(merchantId + orderId + amount + currency + redirectUrl + secret)
+      
 
         $merchantId  = $params['merchantId'] ?? '';
         $orderId     = $params['orderId'] ?? '';
@@ -64,7 +57,6 @@ class KashierService
 
     public function verifySignature(array $incoming, string $incomingSig): bool
     {
-        // ❗ هنا كمان لازم تبقى حسب Kashier: إيه الحقول اللي بتتSigned في callback/webhook
         $expected = $this->makeSignature($incoming);
         return hash_equals($expected, $incomingSig);
     }

@@ -15,9 +15,7 @@ class OtpMail extends Mailable
     public string $otp;
     public int $expires;
 
-    /**
-     * Create a new message instance.
-     */
+   
     public function __construct(User $user, string $otp, int $expires)
     {
         $this->user    = $user;
@@ -25,9 +23,7 @@ class OtpMail extends Mailable
         $this->expires = $expires;
     }
 
-    /**
-     * Build the message.
-     */
+   
     public function build()
     {
         return $this->subject('Your Bondwell Verification Code')

@@ -20,34 +20,29 @@ public function index(Request $r)
 
             $q->where(function ($qq) use ($term) {
 
-                // user name/email/phone
                 $qq->whereHas('user', function ($u) use ($term) {
                     $u->where('name', 'like', "%{$term}%")
                       ->orWhere('email', 'like', "%{$term}%")
                       ->orWhere('phone', 'like', "%{$term}%");
                 })
 
-                // therapist -> user
                 ->orWhereHas('therapist.user', function ($tu) use ($term) {
                     $tu->where('name', 'like', "%{$term}%")
                        ->orWhere('email', 'like', "%{$term}%")
                        ->orWhere('phone', 'like', "%{$term}%");
                 })
 
-                // package fields
                 ->orWhereHas('package', function ($p) use ($term) {
                     $p->where('name', 'like', "%{$term}%");
 
                 });
 
-                // direct ID if numeric
                 if (ctype_digit($term)) {
                     $qq->orWhere('id', (int)$term);
                 }
             });
         };
 
-        // base for counts
         $base = UserPackage::query()
             ->when($r->filled('therapist_id'), fn($x) => $x->where('therapist_id', $r->therapist_id))
             ->when($r->filled('user_id'), fn($x) => $x->where('user_id', $r->user_id));
@@ -62,7 +57,6 @@ public function index(Request $r)
             'pending'   => (clone $base)->where('status', 'pending')->count(),
         ];
 
-        // list query
         $q = UserPackage::with(['user','package','therapist.user'])
             ->when($r->filled('therapist_id'), fn($x) => $x->where('therapist_id', $r->therapist_id))
             ->when($r->filled('user_id'), fn($x) => $x->where('user_id', $r->user_id))

@@ -14,7 +14,7 @@ class DoctorChatController extends Controller
         $user        = $request->user();
         $therapist   = optional($user->therapist);
         $therapistId = $therapist->id;
-        $doctorUserId = $user->id; // ده الـ user_id بتاع الدكتور فى chat_reads
+        $doctorUserId = $user->id; 
 
         if (! $therapistId) {
             return response()->json([
@@ -22,21 +22,14 @@ class DoctorChatController extends Controller
             ], 403);
         }
 
-        // =========================
-        // BASE QUERY لكل الشاتات
-        // =========================
+      
         $base = Chat::query()
             ->where('therapist_id', $therapistId);
 
-        // ==============
-        // COUNTS
-        // ==============
-
-        // كل الشاتس للدكتور
+       
         $allCount = (clone $base)->count();
 
-        // pending_for_doctor:
-        // فيه message من client ومفيش ولا message من therapist
+       
         $pendingForDoctorCount = (clone $base)
             ->whereHas('messages', function ($q) {
                 $q->where('sender_role', 'client');
@@ -46,21 +39,18 @@ class DoctorChatController extends Controller
             })
             ->count();
 
-        // replied_for_doctor:
-        // فيه على الأقل message واحدة من therapist
+        
         $repliedForDoctorCount = (clone $base)
             ->whereHas('messages', function ($q) {
                 $q->where('sender_role', 'therapist');
             })
             ->count();
 
-        // closed (لو محتاجة فى الدكتور)
         $closedCount = (clone $base)
             ->where('status', 'closed')
             ->count();
 
-        // unread (newest): شات فيه message من client
-        // مفيهاش read record للدكتور
+        
         $unreadCount = (clone $base)
             ->whereHas('messages', function ($m) use ($doctorUserId) {
                 $m->where('sender_role', 'client')
@@ -70,7 +60,6 @@ class DoctorChatController extends Controller
             })
             ->count();
 
-        // read (oldest) = all - unread
         $readCount = $allCount - $unreadCount;
 
         $counts = [
@@ -78,26 +67,23 @@ class DoctorChatController extends Controller
             'pending_for_doctor'=> $pendingForDoctorCount,
             'replied_for_doctor'=> $repliedForDoctorCount,
             'closed'            => $closedCount,
-            'newest'            => $unreadCount, // chats فيها رسائل جديدة من العميل
-            'oldest'            => $readCount,   // مفيش رسائل جديدة
+            'newest'            => $unreadCount, 
+            'oldest'            => $readCount,   
         ];
 
-        // =========================
-        // QUERY الأساسية للـ list
-        // =========================
+       
         $q = Chat::with([
                 'session',
-                'user',             // client
-                'therapist.user',   // doctor info
-                'lastMessage',      // لو موجودة فى الموديل
+                'user',             
+                'therapist.user',   
+                'lastMessage',    
             ])
             ->where('therapist_id', $therapistId);
 
-        // ----- Tabs logic -----
         if ($tab = $request->query('tab')) {
 
             if ($tab === 'newest') {
-                // شات فيه message من client مش مقروءة من الدكتور
+               
                 $q->whereHas('messages', function ($m) use ($doctorUserId) {
                     $m->where('sender_role', 'client')
                       ->whereDoesntHave('reads', function ($r) use ($doctorUserId) {
@@ -107,7 +93,7 @@ class DoctorChatController extends Controller
             }
 
             if ($tab === 'oldest') {
-                // شات مفيهوش message من client غير مقروءة من الدكتور
+                
                 $q->whereDoesntHave('messages', function ($m) use ($doctorUserId) {
                     $m->where('sender_role', 'client')
                       ->whereDoesntHave('reads', function ($r) use ($doctorUserId) {
@@ -136,7 +122,7 @@ class DoctorChatController extends Controller
             }
         }
 
-        // search by client name / email
+ 
         if ($search = $request->query('search')) {
             $q->whereHas('user', function ($u) use ($search) {
                 $u->where('name', 'like', "%{$search}%")

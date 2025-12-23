@@ -10,7 +10,7 @@ Broadcast::channel('chat.{chatId}', function ($user, int $chatId) {
         return false;
     }
 
-    $role = $user->role; // من عمود users.role لو عندك
+    $role = $user->role; 
 
     if ($role === 'user') {
         return Chat::where('id', $chatId)
@@ -47,7 +47,5 @@ Broadcast::channel('notifications.user.{userId}', function ($user, int $userId) 
     if (! $user) {
         return false;
     }
-
-    // كل يوزر يشوف notifications بتاعته بس
     return (int) $user->id === (int) $userId;
 });

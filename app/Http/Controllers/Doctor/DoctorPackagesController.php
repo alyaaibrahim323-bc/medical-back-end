@@ -12,7 +12,6 @@ public function index(Request $r)
 {
     $therapistId = auth()->user()->therapist->id;
 
-    // ✅ Search helper (JSON-aware)
     $applySearch = function ($q) use ($r) {
         if (!$r->filled('search')) return;
 
@@ -20,7 +19,6 @@ public function index(Request $r)
 
         $q->where(function ($qq) use ($term) {
 
-            // name.en / name.ar
             $qq->whereRaw(
                 "JSON_UNQUOTE(JSON_EXTRACT(name, '$.en')) LIKE ?",
                 ["%{$term}%"]
@@ -30,7 +28,7 @@ public function index(Request $r)
                 ["%{$term}%"]
             )
 
-            // description.en / description.ar
+           
             ->orWhereRaw(
                 "JSON_UNQUOTE(JSON_EXTRACT(description, '$.en')) LIKE ?",
                 ["%{$term}%"]
@@ -40,31 +38,29 @@ public function index(Request $r)
                 ["%{$term}%"]
             );
 
-            // id search لو رقم
             if (ctype_digit($term)) {
                 $qq->orWhere('id', (int)$term);
             }
         });
     };
 
-    // 👈 base query + users count
+
     $base = Package::ownedByDoctor($therapistId)
         ->withCount('userPackages');
 
-    // ✅ apply search so counts affected
+
     $applySearch($base);
 
-    // ✅ counts (search-aware)
+
     $counts = [
         'all'      => (clone $base)->count(),
         'active'   => (clone $base)->where('is_active', true)->count(),
         'inactive' => (clone $base)->where('is_active', false)->count(),
     ];
 
-    // ----- LIST -----
     $q = clone $base;
 
-    // tab filter
+
     $q->when(
         $r->filled('active'),
         fn($x) => $x->where(

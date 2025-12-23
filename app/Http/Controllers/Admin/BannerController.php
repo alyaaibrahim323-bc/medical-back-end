@@ -9,20 +9,16 @@ use Illuminate\Support\Facades\Storage;
 
 class BannerController extends Controller
 {
-    // GET /admin/banners?status=active|inactive|all
     public function index(Request $r)
 {
-    // 1) Base query من غير فلتر status (عشان نقدر نطلع counts مظبوطة)
     $base = Banner::query();
 
-    // 2) الأرقام لكل تاب
     $counts = [
         'all'      => (clone $base)->count(),
         'active'   => (clone $base)->where('status', 'active')->count(),
         'inactive' => (clone $base)->where('status', 'inactive')->count(),
     ];
 
-    // 3) فلترة الـ list حسب التاب/الـ status لو مبعوت من الـ UI
     $q = clone $base;
 
     if ($r->filled('status') && $r->status !== 'all') {
@@ -34,7 +30,6 @@ class BannerController extends Controller
     $q->orderBy('sort_order')
       ->orderByDesc('id');
 
-    // 4) الريسبونس: data + counts عشان الداشبورد
     return response()->json([
         'data'   => $q->paginate(20),
         'counts' => $counts,
@@ -42,7 +37,6 @@ class BannerController extends Controller
 }
 
 
-    // POST /admin/banners
     public function store(Request $r)
     {
         $data = $r->validate([
@@ -61,14 +55,12 @@ class BannerController extends Controller
         return response()->json(['data' => $banner], 201);
     }
 
-    // GET /admin/banners/{id}
     public function show($id)
     {
         $b = Banner::findOrFail($id);
         return response()->json(['data' => $b]);
     }
 
-    // PUT /admin/banners/{id}
     public function update(Request $r, $id)
     {
         $banner = Banner::findOrFail($id);
@@ -91,7 +83,6 @@ class BannerController extends Controller
         return response()->json(['data' => $banner->refresh()]);
     }
 
-    // DELETE /admin/banners/{id}
     public function destroy($id)
     {
         $banner = Banner::findOrFail($id);

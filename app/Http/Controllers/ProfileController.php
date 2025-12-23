@@ -8,9 +8,7 @@ use Illuminate\Validation\Rules\Password;
 
 class ProfileController extends Controller
 {
-    /**
-     * رجوع بيانات اليوزر الحالي (profile screen).
-     */
+  
     public function show(Request $r)
     {
         $user = $r->user();
@@ -20,9 +18,7 @@ class ProfileController extends Controller
         ]);
     }
 
-    /**
-     * تحديث الاسم / الإيميل / التليفون.
-     */
+
     public function updateProfileInfo(Request $r)
     {
         $user = $r->user();
@@ -31,8 +27,6 @@ class ProfileController extends Controller
             'name'  => ['sometimes','string','max:100'],
             'email' => ['sometimes','email','max:255'],
             'phone' => ['sometimes','string','max:30'],
-            // لو حابة تخليهم يغيروا اللغة من البروفايل:
-            // 'preferred_locale' => ['sometimes','in:en,ar'],
         ]);
 
         $user->update($data);
@@ -43,9 +37,6 @@ class ProfileController extends Controller
         ]);
     }
 
-    /**
-     * تحديث الصورة الشخصية.
-     */
     public function updateAvatar(Request $r)
     {
         $user = $r->user();
@@ -67,9 +58,7 @@ class ProfileController extends Controller
         ]);
     }
 
-    /**
-     * تغيير الباسورد.
-     */
+
     public function updatePassword(Request $r)
     {
         $user = $r->user();
@@ -82,7 +71,6 @@ class ProfileController extends Controller
             ],
         ]);
 
-        // ممنوع الباسورد الجديد = القديم
         if (Hash::check($data['password'], $user->password)) {
             return response()->json([
                 'message' => 'New password must be different from current password.',
@@ -93,7 +81,6 @@ class ProfileController extends Controller
             'password' => Hash::make($data['password']),
         ])->save();
 
-        // لو بتستخدمي Sanctum: نلغى التوكينات القديمة (ماعدا الحالي)
         if (method_exists($user, 'tokens')) {
             $currentTokenId = optional($r->user()->currentAccessToken())->id;
 
@@ -107,9 +94,7 @@ class ProfileController extends Controller
         ]);
     }
 
-    /**
-     * Helper: توحيد شكل بيانات اليوزر الراجعة فى الـ API.
-     */
+   
     protected function transformUser($user): array
     {
         $avatarPath = $user->avatar;
@@ -124,13 +109,10 @@ class ProfileController extends Controller
             'avatar'           => $avatarPath,
             'avatar_url'       => $this->avatarUrl($avatarPath),
             'email_verified_at'=> $user->email_verified_at,
-            // لو محتاجة تضيفى في المستقبل حقول زيادة (role, etc...) ضيفيها هنا
         ];
     }
 
-    /**
-     * Helper: بناء لينك الصورة من مسار التخزين.
-     */
+    
     protected function avatarUrl(?string $path): ?string
     {
         return $path ? asset('storage/'.$path) : null;

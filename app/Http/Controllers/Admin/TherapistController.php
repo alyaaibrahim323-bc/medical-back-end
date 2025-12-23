@@ -15,27 +15,19 @@ use Illuminate\Support\Facades\Schema;
 
 class TherapistController extends Controller
 {
-    /**
-     * ============================================================
-     *  LIST PAGE — WITH COUNTS + SEARCH + ACTIVE FILTER
-     * ============================================================
-     * GET /admin/therapists?search=&active=true|false
-     */
+   
    public function index(Request $request)
 {
     $with = ['user'];
 
     if ($request->boolean('with_availability')) {
-        // لازم يكون عندك علاقة schedules على موديل Therapist
         $with[] = 'schedules';
-        // ولو حابة كمان timeoffs:
-        // $with[] = 'timeoffs';
+       
     }
 
     $base = Therapist::with($with)
         ->withCount('sessions');
 
-    // 🔍 search
     $base->when($request->filled('search'), function ($q) use ($request) {
         $s = $request->search;
 
@@ -45,11 +37,10 @@ class TherapistController extends Controller
                   ->orWhere('email', 'like', "%{$s}%")
                   ->orWhere('phone', 'like', "%{$s}%");
             })
-            ->orWhere('id', $s); // search by therapist_id
+            ->orWhere('id', $s);
         });
     });
 
-    // Active filter
     $base->when($request->filled('active'), function ($q) use ($request) {
         $q->where(
             'is_active',
@@ -57,20 +48,14 @@ class TherapistController extends Controller
         );
     });
 
-    // -----------------------
-    // COUNTS FOR DASHBOARD
-    // -----------------------
+  
     $counts = [
         'all'      => (clone $base)->count(),
         'active'   => (clone $base)->where('is_active', 1)->count(),
         'inactive' => (clone $base)->where('is_active', 0)->count(),
     ];
 
-    // -----------------------
-    // LIST: PAGINATED أو ALL
-    // -----------------------
-
-    // لو ?all=1 → رجّع كل الدكاترة بدون paginate
+    
     if ($request->boolean('all')) {
         $list = $base->orderByDesc('id')->get();
 
@@ -80,7 +65,6 @@ class TherapistController extends Controller
         ]);
     }
 
-    // الإفتراضي: paginate(20)
     $list = $base->orderByDesc('id')->paginate(20);
 
     return response()->json([
@@ -91,23 +75,14 @@ class TherapistController extends Controller
 
 
 
-    /**
-     * ============================================================
-     *  SHOW — BASIC INFO + counts (Sessions, Packages, Timeoffs)
-     * ============================================================
-     * GET /admin/therapists/{id}
-     */
     public function show($id)
 {
-    // نجيب الثيرابست + اليوزر + sessions_count للهيدر
     $t = Therapist::with('user')
         ->withCount('sessions')
         ->findOrFail($id);
 
-    // نستخدم نفس الـ id بتاع الـ Therapist اللي جبناه (مش الـ parameter بس)
     $therapistId = $t->id;
 
-    // Dashboard header numbers
     $counts = [
         'sessions_total'    => TherapySession::where('therapist_id', $therapistId)->count(),
         'sessions_upcoming' => TherapySession::where('therapist_id', $therapistId)
@@ -128,9 +103,7 @@ class TherapistController extends Controller
 
 
 
-    /**
-     * DELETE /admin/therapists/{id}
-     */
+    
     public function destroy($id)
     {
         Therapist::findOrFail($id)->delete();
@@ -138,10 +111,7 @@ class TherapistController extends Controller
     }
 
 
-    /**
-     * Activate / Deactivate
-     * PATCH /admin/therapists/{id}/activate
-     */
+   
     public function activate(Request $request, $id)
     {
         $request->validate(['is_active' => ['required','boolean']]);
@@ -165,24 +135,18 @@ class TherapistController extends Controller
     }
 
 
-    /**
-     * ============================================================
-     *  SCHEDULES TAB
-     * ============================================================
-     * GET /admin/therapists/{id}/schedules
-     */
+
    public function schedules($id)
     {
         $therapist = Therapist::findOrFail($id);
 
         $query = TherapistSchedule::where('therapist_id', $therapist->id);
 
-        // ✅ Fix error: Unknown column 'day_of_week'
-        // لو عندك عمود day_of_week هنرتّب بيه، لو لأ نرتب بالـ from_time فقط
+      
         if (Schema::hasColumn('therapist_schedules', 'day_of_week')) {
             $query->orderBy('day_of_week')->orderBy('from_time');
         } else {
-            // عدلي هنا حسب الأعمدة الموجودة عندك فى الجدول
+          
             if (Schema::hasColumn('therapist_schedules', 'day')) {
                 $query->orderBy('day');
             }
@@ -200,12 +164,6 @@ class TherapistController extends Controller
         ]);
     }
 
-    /**
-     * ============================================================
-     *  TIMEOFFS TAB
-     * ============================================================
-     * GET /admin/therapists/{id}/timeoffs
-     */
     public function timeoffs($id)
     {
         $therapist = Therapist::findOrFail($id);
@@ -220,12 +178,7 @@ class TherapistController extends Controller
     }
 
 
-    /**
-     * ============================================================
-     *  SESSIONS TAB + FILTERS
-     * ============================================================
-     * GET /admin/therapists/{id}/sessions
-     */
+   
     public function sessions(Request $request, $id)
     {
         $therapist = Therapist::findOrFail($id);
@@ -234,16 +187,12 @@ class TherapistController extends Controller
             ->where('therapist_id', $id)
             ->orderByDesc('scheduled_at');
 
-        // ==========================
-        // Status filter
-        // ==========================
+        
         if ($request->filled('status')) {
             $q->where('status', $request->status);
         }
 
-        // ==========================
-        // scope = upcoming | past
-        // ==========================
+  
         if ($request->scope === 'upcoming') {
             $q->where('scheduled_at','>=',now());
         }
@@ -251,7 +200,7 @@ class TherapistController extends Controller
             $q->where('scheduled_at','<',now());
         }
 
-        // Date range
+       
         if ($request->filled('from')) {
             $q->whereDate('scheduled_at','>=',$request->from);
         }
@@ -265,12 +214,6 @@ class TherapistController extends Controller
     }
 
 
-    /**
-     * ============================================================
-     *  PACKAGES TAB
-     * ============================================================
-     * GET /admin/therapists/{id}/packages
-     */
     public function packages($id)
     {
         $rows = Package::where('created_by_therapist_id',$id)
@@ -283,12 +226,7 @@ class TherapistController extends Controller
     }
 
 
-    /**
-     * ============================================================
-     *  SINGLE SESSION OFFER TAB
-     * ============================================================
-     * GET /admin/therapists/{id}/single-session
-     */
+    
     public function singleSession($id)
     {
         $row = SingleSessionOffer::where('therapist_id',$id)->first();

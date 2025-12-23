@@ -9,10 +9,7 @@ use Spatie\Permission\Models\Permission;
 
 class RoleController extends Controller
 {
-    /**
-     * قائمة ال Roles
-     * GET /admin/roles
-     */
+   
     public function index()
     {
         $roles = Role::withCount('permissions')
@@ -30,22 +27,14 @@ class RoleController extends Controller
         return response()->json(['data' => $roles]);
     }
 
-    /**
-     * Add Role
-     * POST /admin/roles
-     * body:
-     *  {
-     *    "name": "support_agent",
-     *    "permissions": ["view_chats","send_notifications",...]
-     *  }
-     */
+   
     public function store(Request $r)
     {
         $data = $r->validate([
             'name'        => ['required','string','max:100','unique:roles,name'],
             'permissions' => ['nullable','array'],
             'permissions.*'=> ['string'],
-            'status'      => ['nullable','in:active,blocked'], // لو حابة تستخدمى status custom فى جدول تانى
+            'status'      => ['nullable','in:active,blocked'], 
         ]);
 
         $role = Role::create(['name' => $data['name']]);
@@ -61,10 +50,7 @@ class RoleController extends Controller
         ], 201);
     }
 
-    /**
-     * Role Details
-     * GET /admin/roles/{id}
-     */
+  
     public function show($id)
     {
         $role = Role::with('permissions')->findOrFail($id);
@@ -72,10 +58,6 @@ class RoleController extends Controller
         return response()->json(['data' => $role]);
     }
 
-    /**
-     * Edit Role
-     * PATCH /admin/roles/{id}
-     */
     public function update(Request $r, $id)
     {
         $role = Role::findOrFail($id);
@@ -102,15 +84,10 @@ class RoleController extends Controller
         ]);
     }
 
-    /**
-     * Delete Role
-     * DELETE /admin/roles/{id}
-     */
     public function destroy($id)
     {
         $role = Role::findOrFail($id);
 
-        // يفضل تمنعي حذف roles أساسية زى admin لو حابة
         if ($role->name === 'admin') {
             return response()->json(['message' => 'Cannot delete admin role'], 422);
         }

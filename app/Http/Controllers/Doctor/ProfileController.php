@@ -9,10 +9,8 @@ use Illuminate\Validation\Rules\Password;
 
 class ProfileController extends Controller
 {
-    /**
-     * GET /doctor/me/profile
-     * يرجع بيانات الثيرابست + اليوزر (وفيها الـ avatar)
-     */
+  
+    
     public function show(Request $r)
     {
         $t = $r->user()->therapist()->with('user')->firstOrFail();
@@ -22,25 +20,7 @@ class ProfileController extends Controller
         ]);
     }
 
-    /**
-     * ✅ API 1: تعديل بيانات الدكتور (من غير الصورة)
-     * PATCH /doctor/me/profile
-     *
-     * Body (JSON):
-     * {
-     *   "name": "...",
-     *   "email": "...",
-     *   "phone": "...",
-     *   "bio": "... أو {\"en\":\"...\",\"ar\":\"...\"}",
-     *   "specialty": "... أو JSON",
-     *   "years_experience": 5,
-     *   "languages": ["ar","en"],
-     *   "certificates": [...],
-     *   "price_cents": 50000,
-     *   "currency": "EGP",
-     *   "is_active": true
-     * }
-     */
+
     public function updateProfileData(Request $r)
     {
         $t = $r->user()->therapist()->firstOrFail();
@@ -60,14 +40,13 @@ class ProfileController extends Controller
             'phone'  => ['sometimes','string','max:30'],
         ]);
 
-        // نحول النصوص لـ JSON زى ما كنتى عاملة
         foreach (['bio','specialty'] as $k) {
             if (array_key_exists($k, $data) && is_string($data[$k])) {
                 $data[$k] = ['en' => $data[$k]];
             }
         }
 
-        // نفصل بيانات user عن بيانات therapist
+ 
         $userFields    = ['name','email','phone'];
         $userData      = array_intersect_key($data, array_flip($userFields));
         $therapistData = array_diff_key($data, array_flip($userFields));
@@ -86,13 +65,6 @@ class ProfileController extends Controller
         ]);
     }
 
-    /**
-     * ✅ API 2: رفع / تعديل صورة البروفايل فقط
-     * POST /doctor/me/profile/avatar
-     * Content-Type: multipart/form-data
-     * Fields:
-     *   avatar: file(jpg/jpeg/png/webp)
-     */
     public function updateAvatar(Request $r)
     {
         $t = $r->user()->therapist()->firstOrFail();
@@ -110,14 +82,11 @@ class ProfileController extends Controller
 
         return response()->json([
             'message' => 'Avatar updated successfully.',
-            'data'    => $t->fresh('user'), // therapist + user بالـ avatar الجديد
+            'data'    => $t->fresh('user'), 
         ]);
     }
 
-    /**
-     * تغيير الباسورد للدكتور
-     * PATCH /doctor/me/profile/password
-     */
+  
     public function updatePassword(Request $r)
     {
         $user = $r->user();
@@ -130,7 +99,6 @@ class ProfileController extends Controller
             ],
         ]);
 
-        // امنع استخدام نفس الباسورد القديم
         if (Hash::check($data['password'], $user->password)) {
             return response()->json([
                 'message' => 'New password must be different from current password.',
@@ -141,7 +109,6 @@ class ProfileController extends Controller
             'password' => Hash::make($data['password']),
         ])->save();
 
-        // اقفل كل التوكنات القديمة ما عدا الحالي (لو بتستخدمي Sanctum)
         if (method_exists($user, 'tokens')) {
             $currentTokenId = optional($r->user()->currentAccessToken())->id;
 

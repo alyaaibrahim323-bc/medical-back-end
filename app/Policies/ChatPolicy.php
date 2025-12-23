@@ -10,13 +10,11 @@ class ChatPolicy
 {
     use HandlesAuthorization;
 
-    // مين يقدر يشوف الشات
     public function view(User $user, Chat $chat): bool
     {
         return $this->participate($user, $chat) || $user->hasRole('admin');
     }
 
-    // مين طرف في الشات (client / doctor assigned)
     public function participate(User $user, Chat $chat): bool
     {
         $isClient = $user->id === $chat->user_id;
@@ -27,32 +25,25 @@ class ChatPolicy
         return $isClient || $isTherapist;
     }
 
-    // مين له حق يبعث رسالة
     public function message(User $user, Chat $chat): bool
     {
-        // لو الشات مقفول خلاص
         if ($chat->status === 'closed') {
             return false;
         }
 
-        // Admin يكتب في أي وقت في أي شات
         if ($user->hasRole('admin')) {
             return true;
         }
 
-        // لأي حد تاني: لازم يكون طرف في الشات
         return $this->participate($user, $chat);
     }
 
-    // تعيين الشات لدكتور أو قفله → Admin بس
     public function assign(User $user, Chat $chat): bool
 {
-    // لو متسجل له role فى Spatie
     if ($user->hasRole('admin')) {
         return true;
     }
 
-    // fallback على عمود users.role
     if ($user->role === 'admin') {
         return true;
     }

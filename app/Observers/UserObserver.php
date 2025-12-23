@@ -9,7 +9,6 @@ class UserObserver
 {
     public function created(User $user): void
     {
-        // لو اتخلق أصلاً دكتور نعمله record
         if ($user->role === 'doctor') {
             $this->ensureTherapistExists($user);
         }
@@ -17,7 +16,6 @@ class UserObserver
 
     public function updated(User $user): void
     {
-        // لو كان مش دكتور وبقى دكتور
         if ($user->wasChanged('role') && $user->role === 'doctor') {
             $this->ensureTherapistExists($user);
         }

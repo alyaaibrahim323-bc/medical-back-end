@@ -30,7 +30,6 @@ class Package extends Model
         return $q->where('applicability','any');
     }
 
-    // ✅ Accessor: name_localized
     public function getNameLocalizedAttribute(): string
     {
         $locale = app()->getLocale() ?? 'en';
@@ -43,7 +42,6 @@ class Package extends Model
         return (string) $raw;
     }
 
-    // ✅ Accessor: description_localized
     public function getDescriptionLocalizedAttribute(): ?string
     {
         $locale = app()->getLocale() ?? 'en';

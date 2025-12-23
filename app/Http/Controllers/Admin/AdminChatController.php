@@ -46,7 +46,6 @@ class AdminChatController extends Controller
     // ---------------- LIST FILTER ----------------
     $q = clone $base;
 
-    // 👇 يقبل tab أو status
     $status = $request->get('tab') ?? $request->get('status');
 
     if ($status === 'pending') {
@@ -71,7 +70,7 @@ class AdminChatController extends Controller
         $this->authorize('assign', $chat);
 
         $chat->update([
-            'therapist_id' => $request->therapist_id,   // لو هيترد من دكتور
+            'therapist_id' => $request->therapist_id,  
             'assigned_by'  => $request->user()->id,
             'assigned_at'  => now(),
         ]);

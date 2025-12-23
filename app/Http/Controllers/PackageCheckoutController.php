@@ -26,7 +26,6 @@ class PackageCheckoutController extends Controller
     $serviceFee = (int) config('fees.package_service_cents', 0);
     $total      = $payable + $serviceFee;
 
-    // ✅ نخلى الترانزاكشن ترجع القيم بدل الـ & references
     [$userPackage, $payment] = DB::transaction(function () use (
         $user,
         $package,
@@ -37,7 +36,6 @@ class PackageCheckoutController extends Controller
         $basePrice,
         $discount
     ) {
-        // 1) UserPackage
         $userPackage = UserPackage::create([
             'user_id'        => $user->id,
             'therapist_id'   => $therapistId,
@@ -51,7 +49,7 @@ class PackageCheckoutController extends Controller
             'is_paid'        => true,
         ]);
 
-        // 2) Payment
+       
         $payment = Payment::create([
             'user_id'           => $user->id,
             'therapist_id'      => $therapistId,
@@ -77,7 +75,6 @@ class PackageCheckoutController extends Controller
         return [$userPackage, $payment];
     });
 
-    // من هنا Intelephense عارف إنهم objects مش null ✅
     $userPackage->load(['package', 'therapist.user']);
 
     $packageData = [

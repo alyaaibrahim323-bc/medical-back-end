@@ -29,18 +29,15 @@ class UserChatController extends Controller
         return new ChatResource($chat);
     }
 
-    // 📌 ده المهم: فتح / إرجاع شات support
     public function openSupportChat(Request $request)
 {
     $user = $request->user();
 
-    // 👈 هنا بدوّر بس على شات support "نضيف"
     $chat = Chat::where('user_id', $user->id)
         ->where('type', 'support')
-        ->whereNull('therapy_session_id')   // مالوش علاقة بسيشن
+        ->whereNull('therapy_session_id')   
         ->first();
 
-    // لو مفيش → أعمل واحد جديد
     if (! $chat) {
         $chat = Chat::create([
             'user_id'            => $user->id,
@@ -51,7 +48,6 @@ class UserChatController extends Controller
         ]);
     }
 
-    // ممكن لو حابة تشيلي session من الـ resource في حالة support
     return new ChatResource(
         $chat->load(['session', 'therapist'])
     );

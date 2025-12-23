@@ -19,9 +19,6 @@ use Illuminate\Support\Facades\Log;
 
 class ChatMessageController extends Controller
 {
-    /**
-     * List messages in a chat (paginated, oldest → newest).
-     */
     public function index(Request $request, Chat $chat)
     {
         $this->authorize('view', $chat);
@@ -34,9 +31,7 @@ class ChatMessageController extends Controller
         return ChatMessageResource::collection($messages);
     }
 
-    /**
-     * Store a new message in a chat.
-     */
+    
   public function store(StoreChatMessageRequest $request, Chat $chat): ChatMessageResource
 {
     $this->authorize('message', $chat);
@@ -57,10 +52,8 @@ class ChatMessageController extends Controller
         'replied_to_id'   => $request->input('replied_to_id'),
     ]);
 
-    // 🟢 تحديث حالة الشات (pending / replied)
     $this->updateChatStatusOnNewMessage($chat, $senderRole);
 
-    // 🟣 Auto Notification: لو اللي بيرد دكتور أو أدمن → نبعت إشعار لليوزر
     if (in_array($senderRole, ['therapist', 'admin'], true) && $chat->user_id) {
 
         $fromName = $senderRole === 'therapist'
@@ -77,7 +70,6 @@ class ChatMessageController extends Controller
         );
     }
 
-    // ✅ Auto Read: لو المرسل دكتور/أدمن → اعتبر آخر رسالة من الكلاينت اتقرأت
     if (in_array($senderRole, ['therapist', 'admin'], true)) {
         $lastClientMsg = $chat->messages()
             ->where('sender_role', 'client')
@@ -88,14 +80,13 @@ class ChatMessageController extends Controller
             ChatRead::updateOrCreate(
                 [
                     'message_id' => $lastClientMsg->id,
-                    'user_id'    => $user->id, // الدكتور أو الأدمن
+                    'user_id'    => $user->id,
                 ],
                 [
                     'read_at'    => now(),
                 ]
             );
 
-            // نبث event عشان الـ UI يحدّث حالة الرسالة
             broadcast(new MessageRead(
                 $chat->id,
                 $lastClientMsg->id,
@@ -104,7 +95,6 @@ class ChatMessageController extends Controller
         }
     }
 
-    // بث الرسالة في الريل تايم
     broadcast(new MessageSent($msg))->toOthers();
 
     return new ChatMessageResource(
@@ -113,9 +103,7 @@ class ChatMessageController extends Controller
 }
 
 
-    /**
-     * Mark a specific message as read by current user.
-     */
+  
     public function read(ReadChatMessageRequest $request, Chat $chat): JsonResponse
     {
         $this->authorize('participate', $chat);
@@ -160,12 +148,8 @@ class ChatMessageController extends Controller
         ]);
     }
 
-    /**
-     * Resolve logical sender role string.
-     */
     protected function resolveSenderRole(\App\Models\User $user): string
 {
-    // log debugging (تقدري تمسحيه بعد ما تتأكدي)
     Log::info('RESOLVE SENDER ROLE', [
         'user_id' => $user->id,
         'roles'   => $user->getRoleNames(),
@@ -173,13 +157,11 @@ class ChatMessageController extends Controller
         'has_therapist' => (bool) $user->therapist,
     ]);
 
-    // 1) Spatie roles لو إنتِ مستخدماها
     if ($user->hasRole('admin')) {
         return 'admin';
     }
 
     if ($user->hasRole('doctor')) {
-        // فى الداتا انتِ بتسميها therapist جوّه الشات
         return 'therapist';
     }
 
@@ -187,7 +169,6 @@ class ChatMessageController extends Controller
         return 'client';
     }
 
-    // 2) fallback على عمود users.role لو لسه بتستعمليه
     if (isset($user->role)) {
         if ($user->role === 'admin') {
             return 'admin';
@@ -200,19 +181,14 @@ class ChatMessageController extends Controller
         }
     }
 
-    // 3) fallback أخير: لو عنده relationship therapist يبقى دكتور
     if ($user->therapist) {
         return 'therapist';
     }
 
-    // 4) آخر اختيار: اعتبره client
     return 'client';
 }
 
 
-    /**
-     * Store attachment if present and return path or null.
-     */
     protected function storeAttachmentIfExists(Request $request, Chat $chat): ?string
     {
         if (! $request->hasFile('file')) {
@@ -225,9 +201,7 @@ class ChatMessageController extends Controller
         );
     }
 
-    /**
-     * Update chat status & timestamps based on who sent the message.
-     */
+    
     protected function updateChatStatusOnNewMessage(Chat $chat, string $senderRole): void
     {
         $now = now();
@@ -247,17 +221,14 @@ class ChatMessageController extends Controller
 
     protected function detectMessageType(Request $request, ?string $path): string
 {
-    // مفيش فايل → Text
     if (! $path) {
         return 'text';
     }
 
-    // لو الفرونت بعِت type صريح نمشي معاه (مثلاً audio)
     if ($request->filled('type')) {
         return $request->input('type');
     }
 
-    // نحدد من الـ MIME
     $file = $request->file('file');
     if (! $file) {
         return 'file';

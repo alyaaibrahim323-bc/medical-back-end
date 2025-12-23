@@ -14,12 +14,7 @@ use Illuminate\Support\Str;
 
 class PaymentsController extends Controller
 {
-    /**
-     * POST /api/payments/kashier
-     * body:
-     * { "purpose":"single_session","id":12 }
-     * { "purpose":"package","id":3 }
-     */
+
     public function createKashier(Request $r, KashierService $kashier)
     {
         $data = $r->validate([
@@ -29,7 +24,6 @@ class PaymentsController extends Controller
 
         $user = $r->user();
 
-        // 1) compute amount + payload (بدون تفاصيل UI)
         $therapistId = null;
         $therapySessionId = null;
         $userPackageId = null;
@@ -80,7 +74,6 @@ class PaymentsController extends Controller
             ];
         }
 
-        // 2) create pending payment
         $reference = strtoupper(Str::random(10));
 
         $payment = DB::transaction(function () use (
@@ -101,21 +94,17 @@ class PaymentsController extends Controller
             ]);
         });
 
-        // 3) build checkout URL params
         $params = [
             'merchantId'  => $kashier->merchantId(),
-            'orderId'     => $payment->reference,       // ✅ merchant order reference
-            'amount'      => $payment->amount_cents,    // ✅ cents
+            'orderId'     => $payment->reference,       
+            'amount'      => $payment->amount_cents,    
             'currency'    => $payment->currency,
             'mode'        => $kashier->mode(),
             'redirectUrl' => $kashier->redirectUrl(),
-            // 'webhookUrl'  => $kashier->webhookUrl(),  // لو Kashier بيسمح
         ];
 
-        // 4) sign
         $params['signature'] = $kashier->makeSignature($params);
 
-        // 5) return checkout url
         $checkoutUrl = $kashier->checkoutUrl($params);
 
         return response()->json([
@@ -130,15 +119,11 @@ class PaymentsController extends Controller
         ], 201);
     }
 
-    /**
-     * GET /api/payments/kashier/callback
-     * ده redirect للـ user بعد الدفع (UI). Source of truth: webhook.
-     */
+  
     public function callback(Request $r, KashierService $kashier)
     {
         $incoming = $r->all();
 
-        // signature verify if provided
         $sig = (string)($incoming['signature'] ?? $incoming['hash'] ?? '');
         if ($sig && !$kashier->verifySignature($incoming, $sig)) {
             return response()->json(['message' => 'Invalid signature'], 401);
@@ -160,10 +145,7 @@ class PaymentsController extends Controller
         ]);
     }
 
-    /**
-     * POST /api/payments/kashier/webhook
-     * ده اللي بيحدد paid/failed بشكل نهائي.
-     */
+   
     public function webhook(Request $r, KashierService $kashier)
     {
         $incoming = $r->all();
@@ -180,12 +162,10 @@ class PaymentsController extends Controller
             /** @var Payment $payment */
             $payment = Payment::where('reference', $orderId)->lockForUpdate()->firstOrFail();
 
-            // ✅ idempotent
             if ($payment->status === Payment::STATUS_PAID) {
                 return;
             }
 
-            // TODO: map Kashier success flag
             $success = (bool)($incoming['success'] ?? $incoming['paid'] ?? false);
 
             $payment->update([
@@ -206,12 +186,9 @@ class PaymentsController extends Controller
         return response()->json(['message' => 'ok']);
     }
 
-    /**
-     * ✅ Confirm session OR create user_package
-     */
+    
     protected function applyBusinessLogicAfterPaid(Payment $payment): void
     {
-        // خليها idempotent (متكررش)
         if ($payment->purpose === Payment::PURPOSE_SINGLE_SESSION && $payment->therapy_session_id) {
             $session = TherapySession::find($payment->therapy_session_id);
             if ($session && ($session->status ?? null) !== 'confirmed') {

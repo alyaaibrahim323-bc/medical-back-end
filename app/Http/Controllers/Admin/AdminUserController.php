@@ -11,21 +11,12 @@ use Illuminate\Validation\Rule;
 
 class AdminUserController extends Controller
 {
-    /**
-     *  GET /admin/users
-     *  ?status=active|blocked|inactive
-     *  ?role=admin|doctor|staff|user
-     *  ?search=keyword
-     *  يرجّع:
-     *  data + counts
-     */
+  
    public function index(Request $r)
 {
-    // ✅ Base query (Admins + Doctors)
     $base = User::query()
         ->whereIn('role', ['admin', 'doctor']);
 
-    // ✅ Search (applies to base + counts + list)
     $base->when($r->filled('search'), function ($q) use ($r) {
         $s = trim($r->search);
 
@@ -40,23 +31,18 @@ class AdminUserController extends Controller
         });
     });
 
-    // ✅ Role filter (applies to base + counts + list)
     $base->when($r->filled('role'), function ($q) use ($r) {
         $q->where('role', $r->role);
     });
 
-    // -------------------------------
-    // ✅ Counts for dashboard tabs (IMPORTANT: no status filter here)
-    // -------------------------------
+
     $counts = [
         'all'      => (clone $base)->count(),
         'active'   => (clone $base)->where('status', 'active')->count(),
         'inactive' => (clone $base)->where('status', 'inactive')->count(),
     ];
 
-    // -------------------------------
-    // ✅ List query (apply current tab/status filter only here)
-    // -------------------------------
+   
     $q = clone $base;
 
     $q->when($r->filled('status'), function ($qq) use ($r) {
@@ -75,10 +61,7 @@ class AdminUserController extends Controller
 
 
 
-    /**
-     *  POST /admin/users
-     *  إنشاء Admin / Staff / Doctor
-     */
+  
     public function store(Request $r)
     {
         $data = $r->validate([
@@ -109,10 +92,7 @@ class AdminUserController extends Controller
     }
 
 
-    /**
-     * GET /admin/users/{id}
-     * صفحة Show Details
-     */
+    
     public function show($id)
     {
         $user = User::with('roles')
@@ -123,10 +103,7 @@ class AdminUserController extends Controller
     }
 
 
-    /**
-     * PATCH /admin/users/{id}
-     * تعديل بيانات يوزر (باسورد اختياري)
-     */
+ 
     public function update(Request $r, $id)
     {
         $user = User::whereIn('role', ['admin','doctor'])->findOrFail($id);
@@ -141,20 +118,16 @@ class AdminUserController extends Controller
             'password'  => ['sometimes','string','min:8'],
         ]);
 
-        // build update array
         $updateData = $data;
 
         unset($updateData['roles'], $updateData['password']);
 
-        // handle password if found
         if (isset($data['password'])) {
             $updateData['password'] = Hash::make($data['password']);
         }
 
-        // update record
         $user->update($updateData);
 
-        // update roles (Spatie)
         if (isset($data['roles'])) {
             $user->syncRoles($data['roles']);
         }

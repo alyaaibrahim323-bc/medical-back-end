@@ -36,7 +36,6 @@ class ScheduleController extends Controller
 
     $therapistId = $request->user()->therapist->id;
 
-    // 1) تطبيع وتحويل الأسماء لأرقام
     $nameToNum = [
         'sunday'=>0,'monday'=>1,'tuesday'=>2,'wednesday'=>3,
         'thursday'=>4,'friday'=>5,'saturday'=>6,
@@ -44,7 +43,7 @@ class ScheduleController extends Controller
     $weeknames = array_values(array_unique(array_map(fn($x)=>strtolower(trim($x)), $data['weekday'])));
     $weeknums  = array_map(fn($name)=>$nameToNum[$name], $weeknames);
 
-    // 2) الأيام الموجودة بالفعل
+    
     $existing = \App\Models\TherapistSchedule::query()
         ->where('therapist_id', $therapistId)
         ->whereIn('weekday', $weeknums)
@@ -53,7 +52,7 @@ class ScheduleController extends Controller
 
     $now = now();
 
-    // ✅ UPDATE الأيام الموجودة
+   
     if (!empty($existing)) {
         \App\Models\TherapistSchedule::where('therapist_id', $therapistId)
             ->whereIn('weekday', $existing)
@@ -66,10 +65,10 @@ class ScheduleController extends Controller
             ]);
     }
 
-    // 3) اللى هننشئه فعلاً (الجديد بس)
+    
     $toCreateNums = array_values(array_diff($weeknums, $existing));
 
-    // 4) تجهيز البلود لتحزين جماعي
+   
     $payload = array_map(function($w) use ($therapistId, $data, $now){
         return [
             'therapist_id' => $therapistId,
@@ -87,7 +86,6 @@ class ScheduleController extends Controller
         \App\Models\TherapistSchedule::insert($payload);
     }
 
-    // 5) رجّع أسماء الأيام (مش الأرقام) فى created / skipped (زي ما هي)
     $numToName = array_flip($nameToNum);
     $createdNames = array_map(fn($n)=>$numToName[$n], $toCreateNums);
     $skippedNames = array_map(fn($n)=>$numToName[$n], $existing);
@@ -95,7 +93,7 @@ class ScheduleController extends Controller
     return response()->json([
         'message'      => 'Schedules created successfully',
         'created'      => $createdNames,
-        'skipped_days' => $skippedNames, // نفس الاسم، بس معناها الآن "updated"
+        'skipped_days' => $skippedNames, 
     ]);
 }
 
@@ -130,7 +128,6 @@ class ScheduleController extends Controller
 
     $therapistId = $request->user()->therapist->id;
 
-    // 1) تطبيع وتحويل الأسماء لأرقام
     $nameToNum = [
         'sunday'=>0,'monday'=>1,'tuesday'=>2,'wednesday'=>3,
         'thursday'=>4,'friday'=>5,'saturday'=>6,
@@ -139,10 +136,8 @@ class ScheduleController extends Controller
     $weeknames = array_values(array_unique(array_map(fn($x)=>strtolower(trim($x)), $data['weekday'])));
     $weeknums  = array_map(fn($name)=>$nameToNum[$name], $weeknames);
 
-    // 2) DELETE ALL old schedules for this therapist
     TherapistSchedule::where('therapist_id', $therapistId)->delete();
 
-    // 3) Bulk insert new
     $now = now();
     $payload = array_map(function($w) use ($therapistId, $data, $now) {
         return [
@@ -161,7 +156,7 @@ class ScheduleController extends Controller
 
     return response()->json([
         'message' => 'Schedules replaced successfully',
-        'created' => $weeknames, // نفس اللي اتبعت
+        'created' => $weeknames, 
         'data'    => TherapistSchedule::where('therapist_id', $therapistId)->orderBy('weekday')->get(),
     ]);
 }

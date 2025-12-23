@@ -12,7 +12,6 @@ class Banner extends Model
         'sort_order',
     ];
 
-    // Scope للبانرات الفعّالة اللي هتظهر في الهوم
     public function scopeActive($q)
     {
         return $q->where('status', 'active')

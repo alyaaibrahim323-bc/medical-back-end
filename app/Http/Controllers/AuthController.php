@@ -18,9 +18,7 @@ use Illuminate\Support\Facades\Password;
 
 class AuthController extends Controller
 {
-    /* =========================================================
-        REGISTER
-    ========================================================= */
+   
 
     public function register(Request $r)
     {
@@ -52,9 +50,7 @@ class AuthController extends Controller
         ], 201);
     }
 
-    /* =========================================================
-        LOGIN
-    ========================================================= */
+  
 
     public function login(Request $r)
     {
@@ -119,9 +115,6 @@ class AuthController extends Controller
         return response()->json(['message'=>'OTP sent']);
     }
 
-    /* =========================================================
-        FORGOT PASSWORD (OTP)
-    ========================================================= */
 
     public function sendPasswordOtp(Request $r)
     {
@@ -146,7 +139,6 @@ class AuthController extends Controller
             $r,
             'password_reset',
             function (User $user, array $data) {
-                // invalidate old access tokens
                 $user->tokens()->delete();
 
                 $user->update([
@@ -158,9 +150,7 @@ class AuthController extends Controller
         );
     }
 
-    /* =========================================================
-        REFRESH TOKEN
-    ========================================================= */
+
 
     public function refresh(Request $r)
     {
@@ -181,7 +171,6 @@ class AuthController extends Controller
             return response()->json(['message'=>'User not found'],401);
         }
 
-        // rotation
         $rec->update(['revoked_at'=>now()]);
 
         return response()->json([
@@ -189,9 +178,7 @@ class AuthController extends Controller
         ]);
     }
 
-    /* =========================================================
-        LOGOUT
-    ========================================================= */
+
 
     public function logout(Request $r)
     {
@@ -211,9 +198,7 @@ class AuthController extends Controller
         return response()->json(['message'=>'Logged out']);
     }
 
-    /* =========================================================
-        HELPERS
-    ========================================================= */
+
 
     private function generateOtp(User $user,string $purpose): array
     {
@@ -307,7 +292,6 @@ class AuthController extends Controller
 
     $user = User::where('email', $data['email'])->firstOrFail();
 
-    // generate reset token (Laravel default)
     $token = Password::createToken($user);
 
     return response()->json([
@@ -315,9 +299,7 @@ class AuthController extends Controller
         'data' => [
             'email' => $user->email,
             'token' => $token,
-            // الداش بورد يبني اللينك بنفسه
-            // example:
-            // https://dashboard.app/reset-password?token=XXX&email=YYY
+         
         ]
     ]);
 }
@@ -333,7 +315,6 @@ public function resetDashboardPassword(Request $r)
     $status = Password::reset(
         $data,
         function (User $user, string $password) {
-            // اقفل كل التوكنات القديمة
             $user->tokens()->delete();
 
             $user->forceFill([

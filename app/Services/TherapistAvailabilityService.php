@@ -11,10 +11,7 @@ use App\Models\TherapySession;
 
 class TherapistAvailabilityService
 {
-    /**
-     * يحسب السلات (slots) للفترة [from..to] بالاعتماد على الجداول والإجازات فقط.
-     * لاحقًا (في المرحلة 3) هنطرح الحجوزات المؤكدة.
-     */
+    
     public function slotsForRange(int $therapistId, Carbon $from, Carbon $to, int $defaultSlot = 60): array
     {
         $schedules = TherapistSchedule::where('therapist_id', $therapistId)
@@ -28,7 +25,7 @@ class TherapistAvailabilityService
             $date = $day->toDateString();
             if (in_array($date, $timeoffs, true)) { $days[$date] = []; continue; }
 
-            $weekday = $day->dayOfWeek; // 0=Sun..6=Sat
+            $weekday = $day->dayOfWeek;
             $shifts  = $schedules->where('weekday', $weekday);
 
             $slots = [];
@@ -55,13 +52,11 @@ class TherapistAvailabilityService
     public function isSlotFree(int $therapistId, Carbon $start, Carbon $end): bool
     {
         return ! TherapySession::where('therapist_id', $therapistId)
-            // ما نعدّش الجلسات اللى اتلغت أو no_show
             ->whereNotIn('status', [
                 TherapySession::STATUS_CANCELLED,
                 TherapySession::STATUS_NO_SHOW,
             ])
-            // overlap check:
-            // (session_start < طلب_end) && (session_end > طلب_start)
+            
             ->where('scheduled_at', '<', $end)
             ->whereRaw(
                 'DATE_ADD(scheduled_at, INTERVAL duration_min MINUTE) > ?',

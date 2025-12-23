@@ -18,9 +18,7 @@ use Illuminate\Support\Str;
 
 class TherapySessionController extends Controller
 {
-    /**
-     * قائمة جلسات اليوزر (upcoming / past / all)
-     */
+   
     public function index(Request $r)
     {
         $user = $r->user();
@@ -29,7 +27,6 @@ class TherapySessionController extends Controller
             ->where('user_id', $user->id)
             ->orderByDesc('scheduled_at');
 
-        // ?scope=upcoming | past | all
         $scope = $r->query('scope');
 
         if ($scope === 'upcoming') {
@@ -45,9 +42,7 @@ class TherapySessionController extends Controller
         return response()->json(['data' => $q->paginate(20)]);
     }
 
-    /**
-     * تفاصيل جلسة واحدة تخص اليوزر
-     */
+    
     public function show(Request $r, $id)
     {
         $user = $r->user();
@@ -59,11 +54,7 @@ class TherapySessionController extends Controller
         return response()->json(['data' => $s]);
     }
 
-    /**
-     * إنشاء جلسة:
-     * - billing_type = single  → حجز جلسة + Payment (pending)
-     * - billing_type = package → حجز جلسة من رصيد الباكدج (confirmed)
-     */
+  
     public function store(Request $r, TherapistAvailabilityService $availability)
     {
         $user = $r->user();
@@ -79,19 +70,16 @@ class TherapySessionController extends Controller
 
         $scheduledAt = Carbon::parse($data['scheduled_at']);
 
-        // تحديد مدة الجلسة حسب نوع الحجز
         $durationMin = $this->resolveDurationMinutes($therapist, $data, $user);
 
         $slotStart = $scheduledAt->copy();
         $slotEnd   = $scheduledAt->copy()->addMinutes($durationMin);
 
-        // تأكد إن الـ slot فاضى (لا يوجد جلسة تانية فى نفس المعاد)
         if (! $availability->isSlotFree($therapist->id, $slotStart, $slotEnd)) {
             return response()->json(['message' => 'Time slot is no longer available'], 422);
         }
 
         if ($data['billing_type'] === 'single') {
-            // 🟢 حجز single session + Payment (الReminder الأحسن يبقى بعد نجاح الدفع من webhook)
             return $this->createSingleSessionWithPayment(
                 user: $user,
                 therapist: $therapist,
@@ -100,7 +88,6 @@ class TherapySessionController extends Controller
             );
         }
 
-        // 🟣 حجز جلسة من Package (confirmed + notification)
         return $this->createSessionFromPackage(
             user: $user,
             therapist: $therapist,
@@ -110,16 +97,13 @@ class TherapySessionController extends Controller
         );
     }
 
-    /**
-     * إلغاء جلسة من ناحية اليوزر
-     */
+    
     public function cancel(Request $r, $id)
     {
         $user = $r->user();
 
         $s = TherapySession::where('user_id', $user->id)->findOrFail($id);
 
-        // validation إضافية
         if (in_array($s->status, [
             TherapySession::STATUS_COMPLETED,
             TherapySession::STATUS_NO_SHOW,
@@ -134,21 +118,13 @@ class TherapySessionController extends Controller
         return response()->json(['message' => 'Session cancelled']);
     }
 
-    /* =========================================================
-     *           HELPERS: SINGLE SESSION & PACKAGE
-     * ========================================================= */
-
-    /**
-     * حجز single session + إنشاء Payment pending
-     */
+    
     protected function createSingleSessionWithPayment($user, Therapist $therapist, Carbon $scheduledAt, int $durationMin)
     {
-        // نجيب عرض السينجل سيشن لو موجود
         $offer = SingleSessionOffer::where('therapist_id', $therapist->id)
             ->where('is_active', true)
             ->first();
 
-        // سعر الجلسة
         $sessionFee = $offer
             ? (int) $offer->price_cents
             : (int) ($therapist->price_cents ?? 0);
@@ -157,7 +133,6 @@ class TherapySessionController extends Controller
             ? ($offer->currency ?? 'EGP')
             : ($therapist->currency ?? 'EGP');
 
-        // service fee من config (أو 0)
         $serviceFee = (int) config('fees.single_session_service_cents', 0);
 
         $total = $sessionFee + $serviceFee;
@@ -177,7 +152,6 @@ class TherapySessionController extends Controller
             &$session,
             &$payment
         ) {
-            // 1) إنشاء الجلسة بحالة pending
             $session = TherapySession::create([
                 'user_id'      => $user->id,
                 'therapist_id' => $therapist->id,
@@ -187,7 +161,6 @@ class TherapySessionController extends Controller
                 'billing_type' => 'single',
             ]);
 
-            // 2) إنشاء Payment
             $payment = Payment::create([
                 'user_id'            => $user->id,
                 'therapist_id'       => $therapist->id,
@@ -228,10 +201,6 @@ class TherapySessionController extends Controller
         ], 201);
     }
 
-    /**
-     * حجز جلسة من Package (بدون دفع، من رصيد الباكدج)
-     * + إرسال Notification "جلسة قادمة"
-     */
     protected function createSessionFromPackage(
         $user,
         Therapist $therapist,
@@ -250,17 +219,14 @@ class TherapySessionController extends Controller
             ->where('status', 'active')
             ->firstOrFail();
 
-        // لو الباكيدج مربوطة بدكتور معيّن، تأكد إن نفس الدكتور
         if ($userPackage->therapist_id && $userPackage->therapist_id !== $therapist->id) {
             return response()->json(['message' => 'Package does not belong to this therapist'], 422);
         }
 
-        // تأكد من رصيد الجلسات
         if ($userPackage->sessions_used >= $userPackage->sessions_total) {
             return response()->json(['message' => 'No remaining sessions in this package'], 422);
         }
 
-        // تأكد من الصلاحية (expiry)
         if ($userPackage->expires_at && $userPackage->expires_at->isPast()) {
             return response()->json(['message' => 'Package has expired'], 422);
         }
@@ -275,7 +241,6 @@ class TherapySessionController extends Controller
             $userPackage,
             &$session
             ) {
-            // 1) نخلق Session بحالة confirmed + billing_type=package
             $session = TherapySession::create([
                 'user_id'        => $user->id,
                 'therapist_id'   => $therapist->id,
@@ -286,7 +251,6 @@ class TherapySessionController extends Controller
                 'user_package_id'=> $userPackage->id,
             ]);
 
-            // 2) نسجل Redemption فى package_redemptions
             PackageRedemption::create([
                 'user_package_id'    => $userPackage->id,
                 'therapy_session_id' => $session->id,
@@ -294,11 +258,10 @@ class TherapySessionController extends Controller
                 'notes'              => null,
             ]);
 
-            // 3) نحدّث counters
             $userPackage->sessions_used += 1;
 
             if ($userPackage->sessions_used >= $userPackage->sessions_total) {
-                $userPackage->status = 'completed'; // أو exhausted
+                $userPackage->status = 'completed';
             }
 
             $userPackage->save();
@@ -306,7 +269,6 @@ class TherapySessionController extends Controller
 
         /** @var \App\Models\TherapySession $session */
 
-        // 🔔 Notification "موعد الجلسة" (auto، عربي/إنجليزي من NotificationResource)
         app(NotificationService::class)->sendToUser(
             $session->user_id,
             'session_upcoming',
@@ -324,14 +286,8 @@ class TherapySessionController extends Controller
         ], 201);
     }
 
-    /**
-     * تحديد مدة الجلسة:
-     * - لو billing_type=package → من package.session_duration_min
-     * - لو single → من SingleSessionOffer أو default
-     */
     protected function resolveDurationMinutes(Therapist $therapist, array $data, $user): int
     {
-        // لو من Package
         if (($data['billing_type'] ?? null) === 'package' && !empty($data['user_package_id'])) {
             $up = UserPackage::with('package')
                 ->where('id', $data['user_package_id'])
@@ -343,7 +299,6 @@ class TherapySessionController extends Controller
             }
         }
 
-        // لو single: نحاول نجيب من SingleSessionOffer
         $offer = SingleSessionOffer::where('therapist_id', $therapist->id)
             ->where('is_active', true)
             ->first();
@@ -352,12 +307,10 @@ class TherapySessionController extends Controller
             return (int) $offer->duration_min;
         }
 
-        // fallback: لو عندك عمود فى therapists اسمه default_session_duration_min
         if (! empty($therapist->default_session_duration_min)) {
             return (int) $therapist->default_session_duration_min;
         }
 
-        // fallback أخير
         return 60;
     }
 }

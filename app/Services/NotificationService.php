@@ -11,9 +11,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 class NotificationService
 {
-    /**
-     * Broadcast to single user
-     */
+
     public function sendToUser(int $userId, string $type, array $data = []): Notification
     {
         $notification = Notification::create([
@@ -29,7 +27,6 @@ class NotificationService
             'delivered_at'    => now(),
         ]);
 
-        // نحول الـ model لـ array بالـ Resource (عشان الـ Event يستقبل array)
         $payload = (new NotificationResource($notification))->resolve();
 
         broadcast(new NotificationSent($userId, $payload))->toOthers();
@@ -37,11 +34,7 @@ class NotificationService
         return $notification;
     }
 
-    /**
-     * Broadcast to many users (all / segment)
-     *
-     * @param EloquentCollection<int,User> $users
-     */
+    
     public function sendToMany(EloquentCollection $users, string $type, array $data = []): Notification
     {
         $notification = Notification::create([
@@ -54,7 +47,7 @@ class NotificationService
         $payload = (new NotificationResource($notification))->resolve();
 
         foreach ($users as $user) {
-            /** @var User $user */ // عشان Intelephense يبطل يقول TValue
+            /** @var User $user */ 
 
             NotificationDelivery::create([
                 'notification_id' => $notification->id,
@@ -68,9 +61,7 @@ class NotificationService
         return $notification;
     }
 
-    /**
-     * مثال: إشعار جلسة قادمة
-     */
+
     public function sendSessionUpcoming(\App\Models\TherapySession $session): void
     {
         $this->sendToUser(
@@ -83,12 +74,10 @@ class NotificationService
         );
     }
 
-    /**
-     * مثال: إشعار سيستم أبديت للكل
-     */
+  
     public function sendSystemUpdate(string $message): void
     {
-        $users = User::all(); // بيرجع EloquentCollection<User>
+        $users = User::all(); 
 
         $this->sendToMany($users, 'system_update', [
             'message' => $message,

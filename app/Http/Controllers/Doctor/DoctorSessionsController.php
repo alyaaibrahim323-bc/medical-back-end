@@ -16,27 +16,16 @@ use Illuminate\Support\Facades\Mail;
 
 class DoctorSessionsController extends Controller
 {
-    /**
-     * قائمة جلسات الدكتور:
-     * - scope = upcoming | past | all
-     * - status = pending|confirmed|completed|cancelled|no_show
-     * - search = اسم / إيميل الكلاينت
-     * - from / to = فلترة بتاريخ الجلسة
-     *
-     * GET /doctor/sessions?scope=upcoming&status=confirmed&search=menna&from=2025-11-01&to=2025-11-30
-     */
+    
     public function index(Request $r)
 {
     $therapistId = $r->user()->therapist->id;
 
-    // -------- BASE (مش بنحط eager load هنا عشان counts أسرع) --------
     $base = TherapySession::query()
         ->forDoctor($therapistId);
 
-    // -------- APPLY FILTERS THAT SHOULD AFFECT COUNTS --------
     $applyFiltersForCounts = function ($q) use ($r) {
 
-        // scope = upcoming | past | all
         if ($scope = $r->query('scope')) {
             if ($scope === 'upcoming') {
                 $q->where('scheduled_at', '>=', now());
@@ -45,7 +34,6 @@ class DoctorSessionsController extends Controller
             }
         }
 
-        // search على اسم / إيميل الكلاينت
         if ($search = $r->query('search')) {
             $search = trim($search);
             $q->whereHas('user', function ($u) use ($search) {
@@ -54,7 +42,6 @@ class DoctorSessionsController extends Controller
             });
         }
 
-        // فلترة بالتاريخ
         if ($r->filled('from')) {
             $q->whereDate('scheduled_at', '>=', $r->query('from'));
         }
@@ -63,7 +50,6 @@ class DoctorSessionsController extends Controller
         }
     };
 
-    // -------- COUNTS (يتأثر بالـ scope/search/from/to) --------
     $countsBase = clone $base;
     $applyFiltersForCounts($countsBase);
 
@@ -77,14 +63,11 @@ class DoctorSessionsController extends Controller
         'no_show'    => (clone $countsBase)->where('status', TherapySession::STATUS_NO_SHOW)->count(),
     ];
 
-    // -------- LIST QUERY --------
     $q = TherapySession::with(['user','payment'])
         ->forDoctor($therapistId);
 
-    // نفس الفلاتر (علشان data = counts context)
     $applyFiltersForCounts($q);
 
-    // status filter (لليست بس)
     if ($r->filled('status') && in_array($r->status, [
         TherapySession::STATUS_PENDING,
         TherapySession::STATUS_CONFIRMED,
@@ -104,15 +87,13 @@ class DoctorSessionsController extends Controller
 }
 
 
-    /**
-     * تفاصيل جلسة واحدة للدكتور
-     */
+   
 public function show(Request $r, $id)
 {
     $therapistId = $r->user()->therapist->id;
 
     $s = TherapySession::with([
-            'user',              // الكلاينت
+            'user',          
             'payment',
             'therapist',
             'therapist.user',
@@ -120,22 +101,18 @@ public function show(Request $r, $id)
         ->where('therapist_id', $therapistId)
         ->findOrFail($id);
 
-    // 🔢 إجمالى الجلسات الناجحة (completed) للثيرابست دا
     $successfulSessionsCount = TherapySession::where('therapist_id', $therapistId)
         ->where('status', TherapySession::STATUS_COMPLETED)
         ->count();
 
-    // 💰 تحديد سعر الجلسة والعملة
     $sessionPriceCents = null;
     $sessionCurrency   = null;
 
     if ($s->payment) {
-        // لو فيه Payment نحاول ناخد session_fee_cents من الـ payload
         $payload = $s->payment->payload ?? [];
         $sessionPriceCents = $payload['session_fee_cents'] ?? $s->payment->amount_cents;
         $sessionCurrency   = $s->payment->currency;
     } else {
-        // fallback من الثيرابست نفسه
         $sessionPriceCents = $s->therapist->price_cents ?? null;
         $sessionCurrency   = $s->therapist->currency ?? 'EGP';
     }
@@ -147,7 +124,6 @@ public function show(Request $r, $id)
             'scheduled_at' => $s->scheduled_at,
             'duration_min' => $s->duration_min,
 
-            // 👇 بيانات العميل
             'client' => [
                 'id'     => $s->user->id,
                 'name'   => $s->user->name,
@@ -156,7 +132,6 @@ public function show(Request $r, $id)
                 'phone'  => $s->user->phone,
             ],
 
-            // 👇 بيانات الثيرابست
             'therapist' => [
                 'id'                       => $s->therapist->id,
                 'name'                     => $s->therapist->user->name,
@@ -167,13 +142,12 @@ public function show(Request $r, $id)
                 'session_currency'         => $sessionCurrency,
             ],
 
-            // 👇 بيانات الدفع لو موجود
             'payment' => $s->payment ? [
                 'id'           => $s->payment->id,
                 'amount_cents' => $s->payment->amount_cents,
                 'currency'     => $s->payment->currency,
                 'status'       => $s->payment->status,
-                'provider'     => $s->payment->provider, // 👈 الإضافة الجديدة
+                'provider'     => $s->payment->provider, 
             ] : null,
         ],
     ]);
@@ -181,12 +155,6 @@ public function show(Request $r, $id)
 
 
 
-    /**
-     * الدكتور يغيّر حالة الجلسة:
-     * status = confirmed | completed | cancelled | no_show
-     *
-     * لو بقت completed → نبعَت auto-notification "Rate your therapist"
-     */
     public function updateStatus(Request $r, $id, NotificationService $notifications)
     {
         $therapistId = $r->user()->therapist->id;
@@ -202,7 +170,6 @@ public function show(Request $r, $id)
 
         $session->update(['status' => $newStatus]);
 
-        // ✅ لما الجلسة تكمّل → ابعتي نتوفكيشن ريتنج
         if ($newStatus === TherapySession::STATUS_COMPLETED) {
             $notifications->sendToUser(
                 $session->user_id,
@@ -217,9 +184,7 @@ public function show(Request $r, $id)
         return response()->json(['data' => $session->refresh()]);
     }
 
-    /**
-     * إنشاء Zoom meeting تلقائياً للجلسة
-     */
+  
     public function createZoom(Request $r, int $id, ZoomService $zoom)
     {
         $therapistId = $r->user()->therapist->id;
@@ -257,10 +222,8 @@ public function show(Request $r, $id)
                 ]);
             });
 
-            // 🌟 Send Email to User
             Mail::to($s->user->email)->send(new SessionLinkMail($s, $s->zoom_join_url));
 
-            // 🌟 Send In-App Notification
             app(NotificationService::class)->sendToUser(
                 $s->user_id,
                 'session_link_ready',
@@ -285,9 +248,7 @@ public function show(Request $r, $id)
         }
     }
 
-    /**
-     * الدكتور يضيف لينك يدوي + إرسال لإيميل + إرسال Notification
-     */
+  
     public function addSessionLink(Request $r, int $id)
     {
         $data = $r->validate([
@@ -305,10 +266,8 @@ public function show(Request $r, $id)
 
         $s->update($data);
 
-        // 🌟 Send Email
         Mail::to($s->user->email)->send(new SessionLinkMail($s, $s->zoom_join_url));
 
-        // 🌟 Send Notification
         app(NotificationService::class)->sendToUser(
             $s->user_id,
             'session_link_ready',

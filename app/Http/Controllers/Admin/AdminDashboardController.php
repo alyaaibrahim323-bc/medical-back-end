@@ -15,7 +15,7 @@ class AdminDashboardController extends Controller
 {
     /**
      * GET /admin/dashboard/stats
-     * الكروت اللي فوق (Total Users / Therapists / Bookings / Subscriptions)
+     *(Total Users / Therapists / Bookings / Subscriptions)
      */
     public function stats(Request $r)
     {
@@ -31,14 +31,12 @@ class AdminDashboardController extends Controller
 
     /**
      * GET /admin/dashboard/recent-activity
-     * البوكس اللي فيه:
      * - New user registered
      * - New therapist added
      * - Notification sent ...
      */
     public function recentActivity(Request $r)
     {
-        // آخر 5 يوزرز
         $users = User::orderByDesc('id')
             ->limit(5)
             ->get()
@@ -50,7 +48,6 @@ class AdminDashboardController extends Controller
                 ];
             });
 
-        // آخر 5 ثيرابست
         $therapists = Therapist::with('user')
             ->orderByDesc('id')
             ->limit(5)
@@ -64,7 +61,6 @@ class AdminDashboardController extends Controller
                 ];
             });
 
-        // آخر 5 Notifications من جدول notifications (لو موجود)
         $notifications = Notification::orderByDesc('id')
             ->limit(5)
             ->get()
@@ -76,13 +72,12 @@ class AdminDashboardController extends Controller
                 ];
             });
 
-        // ندمج الثلاثة ونرتّبهم بالأحدث
         $items = $users
             ->merge($therapists)
             ->merge($notifications)
             ->sortByDesc('created_at')
             ->values()
-            ->take(10)        // نخليهم max 10 rows
+            ->take(10)       
             ->map(function ($row) {
                 return [
                     'type'       => $row['type'],
@@ -99,10 +94,6 @@ class AdminDashboardController extends Controller
         ]);
     }
 
-    /**
-     * GET /admin/dashboard/graph/users
-     * الجراف اللي تحت: Total Users – This year vs Last year
-     */
     public function usersGraph(Request $r)
     {
         $now        = now();
@@ -126,12 +117,9 @@ class AdminDashboardController extends Controller
         ]);
     }
 
-    /**
-     * Helper: حساب عدد اليوزرات لكل شهر فى سنة معينة
-     */
     protected function usersPerMonth(int $year): array
     {
-        // نجهّز مصفوفة للشهور من 1 لـ 12 بقيمة 0
+        
         $months = [];
         for ($m = 1; $m <= 12; $m++) {
             $months[$m] = 0;
@@ -148,7 +136,6 @@ class AdminDashboardController extends Controller
             $months[$monthNum] = (int) $row->total;
         }
 
-        // نرجّعها بصيغة جاهزة للجراف: [ [ 'month' => 'Jan', 'total' => 120 ], ...]
         $out = [];
         foreach ($months as $m => $total) {
             $label = Carbon::create()->month($m)->format('M'); // Jan, Feb, ...

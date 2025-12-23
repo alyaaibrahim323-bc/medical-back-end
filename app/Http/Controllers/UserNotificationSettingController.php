@@ -8,10 +8,7 @@ use Illuminate\Http\Request;
 
 class UserNotificationSettingController extends Controller
 {
-    /**
-     * GET /me/notification-settings
-     * يرجّع الإعدادات الحالية أو يعمل record جديد default لو مش موجود
-     */
+ 
     public function show(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -30,10 +27,7 @@ class UserNotificationSettingController extends Controller
         return response()->json(['data' => $settings]);
     }
 
-    /**
-     * PATCH /me/notification-settings
-     * تحديث التوجّلات (الـ switches) زي السكرين
-     */
+  
     public function update(Request $request): JsonResponse
     {
         $user = $request->user();

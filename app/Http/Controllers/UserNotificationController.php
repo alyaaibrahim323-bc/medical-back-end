@@ -9,10 +9,7 @@ use Illuminate\Http\Request;
 
 class UserNotificationController extends Controller
 {
-    /**
-     * GET /me/notifications
-     * يرجّع ليست النوتيفيكيشن بتاعة اليوزر (مع الـ pagination)
-     */
+    
     public function index(Request $request)
     {
         $user = $request->user();
@@ -22,9 +19,7 @@ class UserNotificationController extends Controller
             ->orderByDesc('created_at')
             ->paginate(20);
 
-        // نخلي resource تشتغل على notification نفسه + pivot read_at
         $notifications = $deliveries->getCollection()->map(function ($delivery) {
-            // نحط الـ pivot جوه الموديل عشان NotificationResource تقراه
             $notification = $delivery->notification;
             $notification->setRelation('pivot', $delivery);
 
@@ -36,10 +31,7 @@ class UserNotificationController extends Controller
         return NotificationResource::collection($deliveries);
     }
 
-    /**
-     * PATCH /me/notifications/{notification}/read
-     * بيعلّم نوتيفيكيشن معينة إنها مقروءة
-     */
+
     public function markAsRead(Request $request, int $notification): JsonResponse
     {
         $user = $request->user();
@@ -59,10 +51,6 @@ class UserNotificationController extends Controller
         ]);
     }
 
-    /**
-     * PATCH /me/notifications/read-all
-     * بيعلّم كل النوتيفيكيشن كـ read
-     */
     public function markAllAsRead(Request $request): JsonResponse
     {
         $user = $request->user();

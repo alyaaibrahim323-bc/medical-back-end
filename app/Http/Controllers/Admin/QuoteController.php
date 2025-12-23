@@ -8,8 +8,7 @@ use Illuminate\Http\Request;
 
 class QuoteController extends Controller
 {
-    // GET /admin/quotes?status=active|inactive|all
-public function index(Request $r)
+   public function index(Request $r)
     {
         $search = trim((string) $r->query('search', ''));
         $status = $r->query('status', null);
@@ -18,7 +17,7 @@ public function index(Request $r)
             ->when($status && $status !== 'all', fn($x) => $x->where('status', $status))
             ->when($search !== '', function ($x) use ($search) {
                 $x->where(function ($qq) use ($search) {
-                    // JSON search (MySQL)
+                    
                     $qq->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(`text`, '$.en')) LIKE ?", ["%{$search}%"])
                        ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(`text`, '$.ar')) LIKE ?", ["%{$search}%"]);
                 });
@@ -30,11 +29,9 @@ public function index(Request $r)
     }
 
 
-    // POST /admin/quotes
     public function store(Request $r)
     {
         $data = $r->validate([
-            // ممكن تبعتي text_en, text_ar من الداشبورد ونجمعهم
             'text_en'   => ['required','string'],
             'text_ar'   => ['nullable','string'],
             'status'    => ['nullable','in:active,inactive'],
@@ -55,14 +52,13 @@ public function index(Request $r)
         return response()->json(['data' => $q], 201);
     }
 
-    // GET /admin/quotes/{id}
+    
     public function show($id)
     {
         $q = Quote::findOrFail($id);
         return response()->json(['data' => $q]);
     }
 
-    // PUT /admin/quotes/{id}
     public function update(Request $r, $id)
     {
         $quote = Quote::findOrFail($id);
@@ -99,7 +95,7 @@ public function index(Request $r)
         return response()->json(['data' => $quote->refresh()]);
     }
 
-    // DELETE /admin/quotes/{id}
+   
     public function destroy($id)
     {
         Quote::findOrFail($id)->delete();
