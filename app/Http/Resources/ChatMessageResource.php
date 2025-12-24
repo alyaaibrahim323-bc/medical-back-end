@@ -24,7 +24,6 @@ class ChatMessageResource extends JsonResource
             'avatar' => $this->sender->avatar
                         ? asset('storage/' . $this->sender->avatar)
                         : null,
-
-        ];
+];
     }
 }
