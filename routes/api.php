@@ -75,7 +75,6 @@ Route::prefix('auth')->group(function () {
 });
 
 // ===== Admin(requires role:admin) =====
-
 Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
     Route::get('/therapists',        [AdminTherapist::class, 'index']);
     //get from therapist tabel {id}

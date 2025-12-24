@@ -3,6 +3,8 @@
 namespace App\Http\Resources;
 
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\contracts\Filesystem\Filesystem;
 
 class ChatMessageResource extends JsonResource
 {
@@ -19,6 +21,10 @@ class ChatMessageResource extends JsonResource
             'duration_ms' => $this->duration_ms,
             'created_at'  => $this->created_at?->toIso8601String(),
             'read_by'     => $this->reads->pluck('user_id'),
+            'avatar' => $this->sender->avatar
+                        ? asset('storage/' . $this->sender->avatar)
+                        : null,
+
         ];
     }
 }
