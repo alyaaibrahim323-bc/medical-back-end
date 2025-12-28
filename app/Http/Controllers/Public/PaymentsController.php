@@ -104,7 +104,7 @@ class PaymentsController extends Controller
             'amount'           => $amount,
             'currency'         => $currency,
             'mode'             => $kashier->mode(),
-            'merchantRedirect' => config('services.kashier.redirect_url'),
+            'merchantRedirect' => $kashier->redirectUrl(),
         ];
 
         // ✅ Hash (baseline الأكثر شيوعًا): merchantId + order + amount + currency + secret
