@@ -24,40 +24,40 @@ class KashierService
         return (string) config('services.kashier.mode', 'test');
     }
 
-    public function redirectUrl(): string
+    public function merchantRedirect(): string
     {
         return (string) config('services.kashier.redirect_url');
     }
 
-    public function webhookUrl(): string
+    public function formatAmountFromCents(int $amountCents): string
     {
-        return (string) config('services.kashier.webhook_url');
+        // جرّبي ده أولاً: "150.00"
+        return number_format($amountCents / 100, 2, '.', '');
     }
 
-    
     public function checkoutUrl(array $params): string
     {
         return $this->baseUrl() . '/?' . http_build_query($params);
     }
 
-
-    public function makeSignature(array $params): string
+    /**
+     * Kashier expects params: merchantId, order, amount, currency, mode, merchantRedirect, hash
+     * We'll hash same sequence including merchantRedirect (to match your old logic but correct naming)
+     */
+    public function makeHash(array $params): string
     {
-      
+        $merchantId       = (string)($params['merchantId'] ?? '');
+        $order            = (string)($params['order'] ?? '');
+        $amount           = (string)($params['amount'] ?? '');
+        $currency         = (string)($params['currency'] ?? '');
+        $merchantRedirect = (string)($params['merchantRedirect'] ?? '');
 
-        $merchantId  = $params['merchantId'] ?? '';
-        $orderId     = $params['orderId'] ?? '';
-        $amount      = $params['amount'] ?? '';
-        $currency    = $params['currency'] ?? '';
-        $redirectUrl = $params['redirectUrl'] ?? '';
-
-        $raw = $merchantId.$orderId.$amount.$currency.$redirectUrl.$this->secret();
+        $raw = $merchantId . $order . $amount . $currency . $merchantRedirect . $this->secret();
         return hash('sha256', $raw);
     }
+    public function redirectUrl(): string
+{
+    return (string) config('services.kashier.redirect_url');
+}
 
-    public function verifySignature(array $incoming, string $incomingSig): bool
-    {
-        $expected = $this->makeSignature($incoming);
-        return hash_equals($expected, $incomingSig);
-    }
 }
