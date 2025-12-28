@@ -16,11 +16,11 @@ class TherapySession extends Model
 
     protected $casts = ['scheduled_at'=>'datetime'];
 
-    const STATUS_PENDING   = 'pending_payment';
+    const STATUS_PENDING   = 'pending payment';
     const STATUS_CONFIRMED = 'confirmed';
     const STATUS_COMPLETED = 'completed';
     const STATUS_CANCELLED = 'cancelled';
-    const STATUS_NO_SHOW   = 'no_show';
+    const STATUS_NO_SHOW   = 'no show';
 
     public function user(){ return $this->belongsTo(User::class); }
     public function therapist(){ return $this->belongsTo(Therapist::class); }
