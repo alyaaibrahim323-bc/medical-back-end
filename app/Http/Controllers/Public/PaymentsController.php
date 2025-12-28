@@ -108,10 +108,8 @@ class PaymentsController extends Controller
         ];
 
         // ✅ Hash (baseline الأكثر شيوعًا): merchantId + order + amount + currency + secret
-        $params['hash'] = hash(
-            'sha256',
-            $params['merchantId'] . $params['order'] . $params['amount'] . $params['currency'] . $kashier->secret()
-        );
+       $params['hash'] = $kashier->makeHash($params);
+
 
         $checkoutUrl = $kashier->checkoutUrl($params);
 

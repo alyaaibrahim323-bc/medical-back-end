@@ -35,15 +35,15 @@ return [
         ],
     ],
 
-    // config/services.php
 'kashier' => [
-  'redirect_url' => env('KASHIER_REDIRECT_URL'),
-  'webhook_url'  => env('KASHIER_WEBHOOK_URL'),
-  'secret'       => env('KASHIER_SECRET'),
-  'merchant_id'  => env('KASHIER_MERCHANT_ID'),
-  'base_url'     => env('KASHIER_BASE_URL'),
-  'mode'         => env('KASHIER_MODE', 'test'),
+    'base_url'     => env('KASHIER_BASE_URL', 'https://checkout.kashier.io'),
+    'merchant_id'  => env('KASHIER_MERCHANT_ID'),
+    'secret'       => env('KASHIER_SECRET'),
+    'mode'         => env('KASHIER_MODE', 'test'),
+    'redirect_url' => env('KASHIER_REDIRECT_URL'),
+    'webhook_url'  => env('KASHIER_WEBHOOK_URL'),
 ],
+
 
 
 
