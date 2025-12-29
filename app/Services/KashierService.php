@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Log;
+
 class KashierService
 {
     public function baseUrl(): string
@@ -16,7 +18,8 @@ class KashierService
 
     public function secret(): string
     {
-        return (string) config('services.kashier.secret');
+        // مهم جدًا: احنا بنtrim عشان أي newline في env يبوّظ الـ hash
+        return trim((string) config('services.kashier.secret'));
     }
 
     public function mode(): string
@@ -24,40 +27,71 @@ class KashierService
         return (string) config('services.kashier.mode', 'test');
     }
 
-    public function merchantRedirect(): string
+    public function redirectUrl(): string
     {
         return (string) config('services.kashier.redirect_url');
     }
 
+    public function webhookUrl(): string
+    {
+        return (string) config('services.kashier.webhook_url');
+    }
+
     public function formatAmountFromCents(int $amountCents): string
     {
-        // جرّبي ده أولاً: "150.00"
         return number_format($amountCents / 100, 2, '.', '');
     }
 
-    public function checkoutUrl(array $params): string
+    /**
+     * ✅ Kashier hash
+     * Sign: "/?payment=mid.orderId.amount.currency"
+     * HMAC-SHA256 with API Key
+     */
+    public function makeHash(string $merchantId, string $orderId, string $amount, string $currency): string
     {
-        return $this->baseUrl() . '/?' . http_build_query($params);
+        $message = "/?payment={$merchantId}.{$orderId}.{$amount}.{$currency}";
+        $secret  = $this->secret();
+
+        Log::info('KASHIER_HASH_DEBUG', [
+            'message' => $message,
+            'secret_length' => strlen($secret),
+        ]);
+
+        return hash_hmac('sha256', $message, $secret);
     }
 
     /**
-     * Kashier expects params: merchantId, order, amount, currency, mode, merchantRedirect, hash
-     * We'll hash same sequence including merchantRedirect (to match your old logic but correct naming)
+     * ✅ Build Checkout URL using "payment" + "hash"
      */
-    public function makeHash(array $params): string
-    {
-        $merchantId       = (string)($params['merchantId'] ?? '');
-        $order            = (string)($params['order'] ?? '');
-        $amount           = (string)($params['amount'] ?? '');
-        $currency         = (string)($params['currency'] ?? '');
-        $merchantRedirect = (string)($params['merchantRedirect'] ?? '');
+    public function checkoutUrl(
+        string $merchantId,
+        string $orderId,
+        string $amount,
+        string $currency,
+        string $hash,
+        array $extra = []
+    ): string {
+        $query = array_merge([
+            'payment' => "{$merchantId}.{$orderId}.{$amount}.{$currency}",
+            'hash' => $hash,
+            'mode' => $this->mode(),
+            'merchantRedirect' => $this->redirectUrl(),
+            'serverWebhook' => $this->webhookUrl(),
 
-        $raw = $merchantId . $order . $amount . $currency . $merchantRedirect . $this->secret();
-        return hash('sha256', $raw);
+            // Optional but recommended:
+            'display' => 'en', // or 'ar'
+            'allowedMethods' => 'card,wallet,bank_installments',
+        ], $extra);
+
+        return $this->baseUrl() . '/?' . http_build_query($query);
     }
-    public function redirectUrl(): string
-{
-    return (string) config('services.kashier.redirect_url');
-}
 
+    /**
+     * ⚠️ Webhook signature differs حسب اللي Kashier بيرجعه عندك.
+     * مؤقتًا خليه true لحد ما تشوف payload الحقيقي وتطبّق نفس signature بتاعهم.
+     */
+    public function verifyWebhook(array $data): bool
+    {
+        return true;
+    }
 }

@@ -17,6 +17,12 @@ class PaymentsController extends Controller
 {
     public function createKashier(Request $r, KashierService $kashier)
     {
+        Log::info('PAYMENT_REQUEST_DEBUG', [
+            'user' => $r->user()?->id,
+            'headers' => $r->headers->all(),
+            'input' => $r->all(),
+        ]);
+
         $data = $r->validate([
             'purpose' => ['required', 'in:single_session,package'],
             'id'      => ['required', 'integer'],
@@ -74,6 +80,7 @@ class PaymentsController extends Controller
             ];
         }
 
+        // ✅ Kashier orderId: خليه unique ومش طويل
         $reference = strtoupper(Str::random(10));
 
         $payment = DB::transaction(function () use (
@@ -94,46 +101,49 @@ class PaymentsController extends Controller
             ]);
         });
 
-        $amount   = $kashier->formatAmountFromCents($payment->amount_cents); // "2465.00"
-        $currency = $payment->currency;
+        // ✅ Format Kashier data
+        $merchantId = $kashier->merchantId();
+        $orderId    = $payment->reference;
+        $amount     = $kashier->formatAmountFromCents($payment->amount_cents);
+        $currency   = $payment->currency;
 
-        // ✅ Kashier expects these param NAMES:
-        $params = [
-            'merchantId'       => $kashier->merchantId(),
-            'order'            => $payment->reference,
-            'amount'           => $amount,
-            'currency'         => $currency,
-            'mode'             => $kashier->mode(),
-            'merchantRedirect' => $kashier->redirectUrl(),
-        ];
+        // ✅ Correct hash
+        $hash = $kashier->makeHash($merchantId, $orderId, $amount, $currency);
 
-        // ✅ Hash (baseline الأكثر شيوعًا): merchantId + order + amount + currency + secret
-       $params['hash'] = $kashier->makeHash($params);
+        // ✅ Checkout URL in correct format (payment=... + hash=...)
+        $checkoutUrl = $kashier->checkoutUrl(
+            $merchantId,
+            $orderId,
+            $amount,
+            $currency,
+            $hash,
+            [
+                'shopperReference' => (string) $user->id,
+                'display' => 'en',
+                // optional: to attach customer info if supported
+                // 'customerName' => $user->name,
+                // 'customerEmail' => $user->email,
+                // 'customerMobile' => $user->phone,
+            ]
+        );
 
-
-        $checkoutUrl = $kashier->checkoutUrl($params);
-
-        Log::info('KASHIER_CREATE_FIXED', [
-            'merchantId' => $params['merchantId'],
-            'order' => $params['order'],
-            'amount' => $params['amount'],
-            'currency' => $params['currency'],
-            'mode' => $params['mode'],
-            'merchantRedirect' => $params['merchantRedirect'],
-            'hash_len' => strlen($params['hash']),
-            'baseUrl' => $kashier->baseUrl(),
-            'secret_len' => strlen($kashier->secret()),
-            'url' => $checkoutUrl,
+        Log::info('KASHIER_CREATE_PAYMENT', [
+            'payment_id' => $payment->id,
+            'reference' => $payment->reference,
+            'amount' => $amount,
+            'currency' => $currency,
+            'hash_length' => strlen($hash),
+            'checkout_url' => $checkoutUrl,
         ]);
 
         return response()->json([
             'message' => 'Payment initiated',
             'data' => [
-                'payment_id'   => $payment->id,
-                'reference'    => $payment->reference,
+                'payment_id' => $payment->id,
+                'reference' => $payment->reference,
                 'amount_cents' => $payment->amount_cents,
-                'amount'       => $amount,
-                'currency'     => $payment->currency,
+                'amount' => $amount,
+                'currency' => $payment->currency,
                 'checkout_url' => $checkoutUrl,
             ]
         ], 201);
@@ -144,7 +154,6 @@ class PaymentsController extends Controller
         $incoming = $r->all();
         Log::info('KASHIER_CALLBACK', $incoming);
 
-        // ✅ Kashier may send order or orderId
         $order = (string)($incoming['order'] ?? $incoming['orderId'] ?? $incoming['order_id'] ?? '');
         if (!$order) return response()->json(['message' => 'Missing order'], 422);
 
@@ -166,7 +175,7 @@ class PaymentsController extends Controller
         $incoming = $r->all();
         Log::info('KASHIER_WEBHOOK', $incoming);
 
-        // مؤقتًا: سيبي verifyWebhook=false لحد ما نعرف توقيع الويب هوك الحقيقي
+        // مؤقتًا verifyWebhook = true داخل الخدمة (لحد ما تطبق signature الحقيقي)
         if (method_exists($kashier, 'verifyWebhook') && !$kashier->verifyWebhook($incoming)) {
             return response()->json(['message' => 'Invalid signature'], 401);
         }
@@ -175,7 +184,8 @@ class PaymentsController extends Controller
         if (!$order) return response()->json(['message' => 'Missing order'], 422);
 
         $success = (bool)($incoming['success'] ?? $incoming['paid'] ?? false);
-        $status = strtoupper((string)($incoming['paymentStatus'] ?? $incoming['status'] ?? ''));
+        $status  = strtoupper((string)($incoming['paymentStatus'] ?? $incoming['status'] ?? ''));
+
         if ($status !== '') {
             $success = in_array($status, ['SUCCESS', 'PAID', 'APPROVED', 'COMPLETED'], true);
         }

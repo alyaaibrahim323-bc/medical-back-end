@@ -35,14 +35,16 @@ return [
         ],
     ],
 
+// config/services.php
 'kashier' => [
-    'base_url'     => env('KASHIER_BASE_URL', 'https://checkout.kashier.io'),
     'merchant_id'  => env('KASHIER_MERCHANT_ID'),
-    'secret'       => env('KASHIER_SECRET'),
+    'secret'       => env('KASHIER_SECRET'), // API Key
+    'base_url'     => env('KASHIER_BASE_URL', 'https://checkout.kashier.io'),
     'mode'         => env('KASHIER_MODE', 'test'),
     'redirect_url' => env('KASHIER_REDIRECT_URL'),
     'webhook_url'  => env('KASHIER_WEBHOOK_URL'),
 ],
+
 
 
 
