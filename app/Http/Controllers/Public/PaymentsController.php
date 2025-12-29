@@ -17,12 +17,6 @@ class PaymentsController extends Controller
 {
     public function createKashier(Request $r, KashierService $kashier)
     {
-        Log::info('PAYMENT_REQUEST_DEBUG', [
-            'user'    => $r->user()?->id,
-            'headers' => $r->headers->all(),
-            'input'   => $r->all(),
-        ]);
-
         $data = $r->validate([
             'purpose' => ['required', 'in:single_session,package'],
             'id'      => ['required', 'integer'],
@@ -45,8 +39,9 @@ class PaymentsController extends Controller
                 return response()->json(['message' => 'Session not payable'], 422);
             }
 
-            $sessionFee = (int) ($session->therapist->price_cents ?? 0);
+            $sessionFee = (int)($session->therapist->price_cents ?? 0);
             $serviceFee = (int) config('fees.single_session_service_cents', 0);
+
             $amountCents = $sessionFee + $serviceFee;
 
             $therapistId = $session->therapist_id;
@@ -67,7 +62,7 @@ class PaymentsController extends Controller
             $discount  = (float) ($package->discount_percent ?? 0);
             $payable   = (int) round($basePrice * (100 - $discount) / 100);
 
-            $serviceFee = (int) config('fees.package_service_cents', 0);
+            $serviceFee  = (int) config('fees.package_service_cents', 0);
             $amountCents = $payable + $serviceFee;
 
             $payload = [
@@ -80,8 +75,7 @@ class PaymentsController extends Controller
             ];
         }
 
-        // ✅ مهم: merchantOrderId لازم يكون فريد
-        $reference = strtoupper(Str::random(10));
+        $reference = strtoupper(Str::random(10)); // order
 
         $payment = DB::transaction(function () use (
             $user, $therapistId, $therapySessionId, $userPackageId, $data, $amountCents, $reference, $payload
@@ -101,25 +95,28 @@ class PaymentsController extends Controller
             ]);
         });
 
-        /**
-         * ✅ Kashier HPP expects:
-         * payment = MID.orderId.amount.currency
-         * IMPORTANT: amount must be INTEGER (cents) to avoid dots breaking the payment string.
-         */
+        // ✅ Kashier HPP params
         $merchantId = $kashier->merchantId();
-        $orderId    = $payment->reference;
-        $amount     = (string) $payment->amount_cents; // ✅ cents as integer string
+        $order      = $payment->reference;
+
+        // ✅ IMPORTANT: amount = cents integer
+        $amount     = (int) $payment->amount_cents;
+
         $currency   = $payment->currency;
 
-        $paymentString = $kashier->buildPaymentString($merchantId, $orderId, $amount, $currency);
-        $hash          = $kashier->makeHashFromPaymentString($paymentString);
+        $hash = $kashier->makeHash($merchantId, $order, $amount, $currency);
 
         $params = [
-            'payment'          => $paymentString,
+            'merchantId'       => $merchantId,
+            'order'            => $order,          // ✅ order (not orderId)
+            'amount'           => $amount,         // ✅ cents
+            'currency'         => $currency,
             'hash'             => $hash,
             'mode'             => $kashier->mode(),
             'merchantRedirect' => $kashier->redirectUrl(),
             'serverWebhook'    => $kashier->webhookUrl(),
+
+            // optional UI
             'display'          => 'en',
             'allowedMethods'   => 'card,wallet,bank_installments',
             'shopperReference' => (string) $user->id,
@@ -128,73 +125,60 @@ class PaymentsController extends Controller
         $checkoutUrl = $kashier->checkoutUrl($params);
 
         Log::info('KASHIER_CREATE_PAYMENT', [
-            'payment_id'      => $payment->id,
-            'reference'       => $payment->reference,
-            'amount_cents'    => $payment->amount_cents,
-            'payment_string'  => $paymentString,
-            'hash_length'     => strlen($hash),
-            'checkout_url'    => $checkoutUrl,
+            'payment_id' => $payment->id,
+            'reference' => $payment->reference,
+            'amount_cents' => $payment->amount_cents,
+            'hash_length' => strlen($hash),
+            'checkout_url' => $checkoutUrl,
         ]);
 
         return response()->json([
             'message' => 'Payment initiated',
             'data' => [
-                'payment_id'   => $payment->id,
-                'reference'    => $payment->reference,
+                'payment_id' => $payment->id,
+                'reference' => $payment->reference,
                 'amount_cents' => $payment->amount_cents,
-                'currency'     => $payment->currency,
+                'currency' => $payment->currency,
                 'checkout_url' => $checkoutUrl,
             ]
         ], 201);
     }
 
-    public function callback(Request $r, KashierService $kashier)
+    public function callback(Request $r)
     {
         $incoming = $r->all();
         Log::info('KASHIER_CALLBACK', $incoming);
 
-        $orderId = $this->extractOrderIdFromKashierPayload($incoming);
+        $order = $this->extractOrder($incoming);
+        if (!$order) return response()->json(['message' => 'Missing order'], 422);
 
-        if (!$orderId) {
-            return response()->json(['message' => 'Missing order'], 422);
-        }
-
-        $payment = Payment::where('reference', $orderId)->first();
+        $payment = Payment::where('reference', $order)->first();
         if (!$payment) return response()->json(['message' => 'Payment not found'], 404);
 
         return response()->json([
             'message' => 'Callback received (UI only)',
             'data' => [
                 'reference' => $payment->reference,
-                'status'    => $payment->status,
-                'raw'       => $incoming,
+                'status' => $payment->status,
+                'raw' => $incoming,
             ],
         ]);
     }
 
-    public function webhook(Request $r, KashierService $kashier)
+    public function webhook(Request $r)
     {
         $incoming = $r->all();
         Log::info('KASHIER_WEBHOOK', $incoming);
 
-        // ✅ لو Kashier بيرسل hash للـ webhook وعايز تتحقق
-        if ($kashier->shouldVerifyWebhook() && !$kashier->verifyWebhook($incoming)) {
-            return response()->json(['message' => 'Invalid signature'], 401);
-        }
+        $order = $this->extractOrder($incoming);
+        if (!$order) return response()->json(['message' => 'Missing order'], 422);
 
-        $orderId = $this->extractOrderIdFromKashierPayload($incoming);
-        if (!$orderId) return response()->json(['message' => 'Missing order'], 422);
+        $status = strtoupper((string)($incoming['paymentStatus'] ?? $incoming['status'] ?? ''));
+        $success = in_array($status, ['SUCCESS', 'PAID', 'APPROVED', 'COMPLETED'], true)
+            || (bool)($incoming['success'] ?? $incoming['paid'] ?? false);
 
-        // ✅ success detection (مرن)
-        $success = (bool)($incoming['success'] ?? $incoming['paid'] ?? false);
-        $status  = strtoupper((string)($incoming['paymentStatus'] ?? $incoming['status'] ?? ''));
-
-        if ($status !== '') {
-            $success = in_array($status, ['SUCCESS', 'PAID', 'APPROVED', 'COMPLETED'], true);
-        }
-
-        DB::transaction(function () use ($incoming, $orderId, $success) {
-            $payment = Payment::where('reference', $orderId)->lockForUpdate()->firstOrFail();
+        DB::transaction(function () use ($incoming, $order, $success) {
+            $payment = Payment::where('reference', $order)->lockForUpdate()->firstOrFail();
 
             if (in_array($payment->status, [Payment::STATUS_PAID, Payment::STATUS_FAILED], true)) {
                 return;
@@ -216,23 +200,17 @@ class PaymentsController extends Controller
         return response()->json(['message' => 'ok']);
     }
 
-    protected function extractOrderIdFromKashierPayload(array $incoming): ?string
+    protected function extractOrder(array $incoming): ?string
     {
-        // 1) Most common naming
-        $orderId = (string)($incoming['merchantOrderId'] ?? $incoming['orderId'] ?? $incoming['order'] ?? $incoming['order_id'] ?? '');
-        if ($orderId !== '') return $orderId;
+        $order = (string)(
+            $incoming['merchantOrderId']
+            ?? $incoming['order']
+            ?? $incoming['orderId']
+            ?? $incoming['order_id']
+            ?? ''
+        );
 
-        // 2) Sometimes they send `payment` = MID.order.amount.currency
-        $paymentString = (string)($incoming['payment'] ?? '');
-        if ($paymentString !== '') {
-            $parts = explode('.', $paymentString);
-            // expected: [MID, orderId, amount, currency]
-            if (count($parts) >= 2) {
-                return (string)$parts[1];
-            }
-        }
-
-        return null;
+        return $order !== '' ? $order : null;
     }
 
     protected function applyBusinessLogicAfterPaid(Payment $payment): void
