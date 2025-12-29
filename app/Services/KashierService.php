@@ -16,10 +16,10 @@ class KashierService
         return (string) config('services.kashier.merchant_id');
     }
 
-    public function secret(): string
+    // ✅ دي الـ API Key بتاعة Kashier (مش webhook secret)
+    public function apiKey(): string
     {
-        // مهم جدًا: احنا بنtrim عشان أي newline في env يبوّظ الـ hash
-        return trim((string) config('services.kashier.secret'));
+        return (string) config('services.kashier.secret');
     }
 
     public function mode(): string
@@ -37,61 +37,66 @@ class KashierService
         return (string) config('services.kashier.webhook_url');
     }
 
-    public function formatAmountFromCents(int $amountCents): string
+    // ✅ payment string لازم يكون MID.orderId.amount.currency
+    // ✅ amount هنا لازم يكون integer string (cents)
+    public function buildPaymentString(string $merchantId, string $orderId, string $amountCents, string $currency): string
     {
-        return number_format($amountCents / 100, 2, '.', '');
+        return "{$merchantId}.{$orderId}.{$amountCents}.{$currency}";
     }
 
-    /**
-     * ✅ Kashier hash
-     * Sign: "/?payment=mid.orderId.amount.currency"
-     * HMAC-SHA256 with API Key
-     */
-    public function makeHash(string $merchantId, string $orderId, string $amount, string $currency): string
+    // ✅ hash = HMAC-SHA256(paymentString, apiKey)
+    public function makeHashFromPaymentString(string $paymentString): string
     {
-        $message = "/?payment={$merchantId}.{$orderId}.{$amount}.{$currency}";
-        $secret  = $this->secret();
-
         Log::info('KASHIER_HASH_DEBUG', [
-            'message' => $message,
-            'secret_length' => strlen($secret),
+            'payment' => $paymentString,
+            'api_key_length' => strlen($this->apiKey()),
         ]);
 
-        return hash_hmac('sha256', $message, $secret);
+        return hash_hmac('sha256', $paymentString, $this->apiKey());
+    }
+
+    public function checkoutUrl(array $params): string
+    {
+        return $this->baseUrl() . '/?' . http_build_query($params);
     }
 
     /**
-     * ✅ Build Checkout URL using "payment" + "hash"
+     * Webhook verification:
+     * Kashier بتبعت signature/hash في الويبهوك. لو انت مش متأكد من الفورمات حالياً:
+     * خليها false لحد ما تاخد payload فعلي من Kashier وتثبت صيغة التوقيع.
      */
-    public function checkoutUrl(
-        string $merchantId,
-        string $orderId,
-        string $amount,
-        string $currency,
-        string $hash,
-        array $extra = []
-    ): string {
-        $query = array_merge([
-            'payment' => "{$merchantId}.{$orderId}.{$amount}.{$currency}",
-            'hash' => $hash,
-            'mode' => $this->mode(),
-            'merchantRedirect' => $this->redirectUrl(),
-            'serverWebhook' => $this->webhookUrl(),
-
-            // Optional but recommended:
-            'display' => 'en', // or 'ar'
-            'allowedMethods' => 'card,wallet,bank_installments',
-        ], $extra);
-
-        return $this->baseUrl() . '/?' . http_build_query($query);
+    public function shouldVerifyWebhook(): bool
+    {
+        return (bool) config('services.kashier.verify_webhook', false);
     }
 
-    /**
-     * ⚠️ Webhook signature differs حسب اللي Kashier بيرجعه عندك.
-     * مؤقتًا خليه true لحد ما تشوف payload الحقيقي وتطبّق نفس signature بتاعهم.
-     */
     public function verifyWebhook(array $data): bool
     {
-        return true;
+        $receivedHash = (string)($data['hash'] ?? '');
+        if ($receivedHash === '') return false;
+
+        // نحاول نعيد بناء paymentString:
+        // الأفضل لو Kashier بترسل `payment` جاهز
+        $paymentString = (string)($data['payment'] ?? '');
+
+        // أو نبنيه من merchantOrderId + amount + currency (لو موجودين)
+        if ($paymentString === '') {
+            $orderId  = (string)($data['merchantOrderId'] ?? $data['orderId'] ?? $data['order'] ?? '');
+            $amount   = (string)($data['amount'] ?? '');
+            $currency = (string)($data['currency'] ?? 'EGP');
+
+            if ($orderId !== '' && $amount !== '') {
+                // ⚠️ هنا لازم تتأكد: هل amount في الويبهوك cents ولا decimal؟
+                // لو جالك decimal "1971.54" حوّله لـ "197154" قبل البناء.
+                $amountNormalized = str_contains($amount, '.') ? str_replace('.', '', $amount) : $amount;
+
+                $paymentString = $this->buildPaymentString($this->merchantId(), $orderId, $amountNormalized, $currency);
+            }
+        }
+
+        if ($paymentString === '') return false;
+
+        $calculated = $this->makeHashFromPaymentString($paymentString);
+        return hash_equals($calculated, $receivedHash);
     }
 }

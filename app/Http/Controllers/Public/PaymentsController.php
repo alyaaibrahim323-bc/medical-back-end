@@ -18,9 +18,9 @@ class PaymentsController extends Controller
     public function createKashier(Request $r, KashierService $kashier)
     {
         Log::info('PAYMENT_REQUEST_DEBUG', [
-            'user' => $r->user()?->id,
+            'user'    => $r->user()?->id,
             'headers' => $r->headers->all(),
-            'input' => $r->all(),
+            'input'   => $r->all(),
         ]);
 
         $data = $r->validate([
@@ -80,7 +80,7 @@ class PaymentsController extends Controller
             ];
         }
 
-        // ✅ Kashier orderId: خليه unique ومش طويل
+        // ✅ مهم: merchantOrderId لازم يكون فريد
         $reference = strtoupper(Str::random(10));
 
         $payment = DB::transaction(function () use (
@@ -101,63 +101,65 @@ class PaymentsController extends Controller
             ]);
         });
 
-        // ✅ Format Kashier data
+        /**
+         * ✅ Kashier HPP expects:
+         * payment = MID.orderId.amount.currency
+         * IMPORTANT: amount must be INTEGER (cents) to avoid dots breaking the payment string.
+         */
         $merchantId = $kashier->merchantId();
         $orderId    = $payment->reference;
-        $amount     = $kashier->formatAmountFromCents($payment->amount_cents);
+        $amount     = (string) $payment->amount_cents; // ✅ cents as integer string
         $currency   = $payment->currency;
 
-        // ✅ Correct hash
-        $hash = $kashier->makeHash($merchantId, $orderId, $amount, $currency);
+        $paymentString = $kashier->buildPaymentString($merchantId, $orderId, $amount, $currency);
+        $hash          = $kashier->makeHashFromPaymentString($paymentString);
 
-        // ✅ Checkout URL in correct format (payment=... + hash=...)
-        $checkoutUrl = $kashier->checkoutUrl(
-            $merchantId,
-            $orderId,
-            $amount,
-            $currency,
-            $hash,
-            [
-                'shopperReference' => (string) $user->id,
-                'display' => 'en',
-                // optional: to attach customer info if supported
-                // 'customerName' => $user->name,
-                // 'customerEmail' => $user->email,
-                // 'customerMobile' => $user->phone,
-            ]
-        );
+        $params = [
+            'payment'          => $paymentString,
+            'hash'             => $hash,
+            'mode'             => $kashier->mode(),
+            'merchantRedirect' => $kashier->redirectUrl(),
+            'serverWebhook'    => $kashier->webhookUrl(),
+            'display'          => 'en',
+            'allowedMethods'   => 'card,wallet,bank_installments',
+            'shopperReference' => (string) $user->id,
+        ];
+
+        $checkoutUrl = $kashier->checkoutUrl($params);
 
         Log::info('KASHIER_CREATE_PAYMENT', [
-            'payment_id' => $payment->id,
-            'reference' => $payment->reference,
-            'amount' => $amount,
-            'currency' => $currency,
-            'hash_length' => strlen($hash),
-            'checkout_url' => $checkoutUrl,
+            'payment_id'      => $payment->id,
+            'reference'       => $payment->reference,
+            'amount_cents'    => $payment->amount_cents,
+            'payment_string'  => $paymentString,
+            'hash_length'     => strlen($hash),
+            'checkout_url'    => $checkoutUrl,
         ]);
 
         return response()->json([
             'message' => 'Payment initiated',
             'data' => [
-                'payment_id' => $payment->id,
-                'reference' => $payment->reference,
+                'payment_id'   => $payment->id,
+                'reference'    => $payment->reference,
                 'amount_cents' => $payment->amount_cents,
-                'amount' => $amount,
-                'currency' => $payment->currency,
+                'currency'     => $payment->currency,
                 'checkout_url' => $checkoutUrl,
             ]
         ], 201);
     }
 
-    public function callback(Request $r)
+    public function callback(Request $r, KashierService $kashier)
     {
         $incoming = $r->all();
         Log::info('KASHIER_CALLBACK', $incoming);
 
-        $order = (string)($incoming['order'] ?? $incoming['orderId'] ?? $incoming['order_id'] ?? '');
-        if (!$order) return response()->json(['message' => 'Missing order'], 422);
+        $orderId = $this->extractOrderIdFromKashierPayload($incoming);
 
-        $payment = Payment::where('reference', $order)->first();
+        if (!$orderId) {
+            return response()->json(['message' => 'Missing order'], 422);
+        }
+
+        $payment = Payment::where('reference', $orderId)->first();
         if (!$payment) return response()->json(['message' => 'Payment not found'], 404);
 
         return response()->json([
@@ -175,14 +177,15 @@ class PaymentsController extends Controller
         $incoming = $r->all();
         Log::info('KASHIER_WEBHOOK', $incoming);
 
-        // مؤقتًا verifyWebhook = true داخل الخدمة (لحد ما تطبق signature الحقيقي)
-        if (method_exists($kashier, 'verifyWebhook') && !$kashier->verifyWebhook($incoming)) {
+        // ✅ لو Kashier بيرسل hash للـ webhook وعايز تتحقق
+        if ($kashier->shouldVerifyWebhook() && !$kashier->verifyWebhook($incoming)) {
             return response()->json(['message' => 'Invalid signature'], 401);
         }
 
-        $order = (string)($incoming['order'] ?? $incoming['orderId'] ?? $incoming['order_id'] ?? '');
-        if (!$order) return response()->json(['message' => 'Missing order'], 422);
+        $orderId = $this->extractOrderIdFromKashierPayload($incoming);
+        if (!$orderId) return response()->json(['message' => 'Missing order'], 422);
 
+        // ✅ success detection (مرن)
         $success = (bool)($incoming['success'] ?? $incoming['paid'] ?? false);
         $status  = strtoupper((string)($incoming['paymentStatus'] ?? $incoming['status'] ?? ''));
 
@@ -190,8 +193,8 @@ class PaymentsController extends Controller
             $success = in_array($status, ['SUCCESS', 'PAID', 'APPROVED', 'COMPLETED'], true);
         }
 
-        DB::transaction(function () use ($incoming, $order, $success) {
-            $payment = Payment::where('reference', $order)->lockForUpdate()->firstOrFail();
+        DB::transaction(function () use ($incoming, $orderId, $success) {
+            $payment = Payment::where('reference', $orderId)->lockForUpdate()->firstOrFail();
 
             if (in_array($payment->status, [Payment::STATUS_PAID, Payment::STATUS_FAILED], true)) {
                 return;
@@ -211,6 +214,25 @@ class PaymentsController extends Controller
         });
 
         return response()->json(['message' => 'ok']);
+    }
+
+    protected function extractOrderIdFromKashierPayload(array $incoming): ?string
+    {
+        // 1) Most common naming
+        $orderId = (string)($incoming['merchantOrderId'] ?? $incoming['orderId'] ?? $incoming['order'] ?? $incoming['order_id'] ?? '');
+        if ($orderId !== '') return $orderId;
+
+        // 2) Sometimes they send `payment` = MID.order.amount.currency
+        $paymentString = (string)($incoming['payment'] ?? '');
+        if ($paymentString !== '') {
+            $parts = explode('.', $paymentString);
+            // expected: [MID, orderId, amount, currency]
+            if (count($parts) >= 2) {
+                return (string)$parts[1];
+            }
+        }
+
+        return null;
     }
 
     protected function applyBusinessLogicAfterPaid(Payment $payment): void
