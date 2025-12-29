@@ -110,14 +110,13 @@ class PaymentsController extends Controller
 
         $params = [
             'merchantId' => $merchantId,
-            'apiKey'     => $apiKey,          // ✅ ده سبب "invalid authorization" لما كان ناقص
+            'apiKey'     => $apiKey,
             'order'      => $order,
             'amount'     => $amount,
             'currency'   => $currency,
             'hash'       => $hash,
             'mode'       => $kashier->mode(),
 
-            // ✅ سيب http_build_query يعمل encoding صح (https%3A%2F%2F...)
             'merchantRedirect' => $kashier->redirectUrl(),
             'serverWebhook'    => $kashier->webhookUrl(),
 

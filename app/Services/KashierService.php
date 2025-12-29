@@ -59,8 +59,10 @@ class KashierService
             'message' => $message,
             'secret_len' => strlen($this->secretKey()),
         ]);
+            $path = "/?payment=".$message;
 
-        return hash_hmac('sha256', $message, $this->secretKey());
+
+        return hash_hmac('sha256', $path, $this->secretKey(),false);
     }
 
     public function buildPaymentUrl(array $params): string
