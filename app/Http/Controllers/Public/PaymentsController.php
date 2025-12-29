@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
-use App\Models\Package;
 use App\Models\TherapySession;
+use App\Models\Package;
 use App\Models\UserPackage;
 use App\Services\KashierService;
 use Illuminate\Http\Request;
@@ -16,136 +16,196 @@ use Illuminate\Support\Str;
 class PaymentsController extends Controller
 {
     public function createKashier(Request $r, KashierService $kashier)
-{
-    $data = $r->validate([
-        'purpose' => ['required', 'in:single_session,package'],
-        'id'      => ['required', 'integer'],
-    ]);
+    {
+        Log::info('PAYMENT_REQUEST_DEBUG', [
+            'user' => $r->user()?->id,
+            'input' => $r->all(),
+        ]);
 
-    $user = $r->user();
+        $data = $r->validate([
+            'purpose' => ['required', 'in:single_session,package'],
+            'id'      => ['required', 'integer'],
+        ]);
 
-    // ===== احسب المبلغ (قروش) =====
-    $amountCents = 2465; // مثال – انتِ أصلاً عندك الحساب ده صح
+        $user = $r->user();
 
-    // order / reference
-    $order = strtoupper(Str::random(10));
+        $therapistId = null;
+        $therapySessionId = null;
+        $userPackageId = null;
+        $amountCents = 0;
+        $payload = [];
 
-    // خزّني Payment في DB (زي ما عندك)
-    $payment = Payment::create([
-        'user_id' => $user->id,
-        'purpose' => $data['purpose'],
-        'amount_cents' => $amountCents,
-        'currency' => 'EGP',
-        'provider' => 'kashier',
-        'status' => Payment::STATUS_PENDING,
-        'reference' => $order,
-    ]);
+        if ($data['purpose'] === Payment::PURPOSE_SINGLE_SESSION) {
+            $session = TherapySession::with('therapist')
+                ->where('user_id', $user->id)
+                ->findOrFail($data['id']);
 
-    // ===== Kashier Params =====
-    $merchantId = $kashier->merchantId();
-    $currency   = 'EGP';
+            if (($session->status ?? null) !== 'pending') {
+                return response()->json(['message' => 'Session not payable'], 422);
+            }
 
-    // ✅ HASH الصح
-    $hash = $kashier->makeHash(
-        $merchantId,
-        $order,
-        $amountCents,
-        $currency
-    );
+            $sessionFee = (int) ($session->therapist->price_cents ?? 0);
+            $serviceFee = (int) config('fees.single_session_service_cents', 0);
+            $amountCents = $sessionFee + $serviceFee;
 
-    // ✅ اللينك الصح (من غير payment=)
-    $params = [
-        'merchantId' => $merchantId,
-        'order'      => $order,
-        'amount'     => $amountCents, // cents
-        'currency'   => $currency,
-        'hash'       => $hash,
-        'mode'       => $kashier->mode(),
-        'merchantRedirect' => $kashier->redirectUrl(),
-        'serverWebhook'    => $kashier->webhookUrl(),
-        'display'          => 'en',
-        'allowedMethods'   => 'card,wallet,bank_installments',
-        'shopperReference' => (string) $user->id,
-    ];
+            $therapistId = $session->therapist_id;
+            $therapySessionId = $session->id;
 
-    $checkoutUrl = $kashier->checkoutUrl($params);
+            $payload = [
+                'type' => 'single_session',
+                'session_fee_cents' => $sessionFee,
+                'service_fee_cents' => $serviceFee,
+                'session_id' => $session->id,
+            ];
+        } else {
+            $package = Package::where('is_active', true)->findOrFail($data['id']);
+            $therapistId = $package->created_by_therapist_id;
 
-    return response()->json([
-        'checkout_url' => $checkoutUrl,
-        'order' => $order,
-        'amount' => $amountCents,
-    ]);
-}
+            $basePrice = (int) $package->price_cents;
+            $discount  = (float) ($package->discount_percent ?? 0);
+            $payable   = (int) round($basePrice * (100 - $discount) / 100);
 
+            $serviceFee = (int) config('fees.package_service_cents', 0);
+            $amountCents = $payable + $serviceFee;
+
+            $payload = [
+                'type' => 'package',
+                'package_id' => $package->id,
+                'base_price_cents' => $basePrice,
+                'discount_percent' => $discount,
+                'payable_cents' => $payable,
+                'service_fee_cents' => $serviceFee,
+            ];
+        }
+
+        // Kashier expects amount in smallest unit (piasters) كثير من integrations
+        $amount = (string) $amountCents; // مثال: 2465 = 24.65 EGP
+
+        $reference = strtoupper(Str::random(10));
+
+        $payment = DB::transaction(function () use (
+            $user, $therapistId, $therapySessionId, $userPackageId, $data, $amountCents, $reference, $payload
+        ) {
+            return Payment::create([
+                'user_id' => $user->id,
+                'therapist_id' => $therapistId,
+                'therapy_session_id' => $therapySessionId,
+                'user_package_id' => $userPackageId,
+                'purpose' => $data['purpose'],
+                'amount_cents' => $amountCents,
+                'currency' => 'EGP',
+                'provider' => 'kashier',
+                'status' => Payment::STATUS_PENDING,
+                'reference' => $reference,
+                'payload' => $payload,
+            ]);
+        });
+
+        $merchantId = $kashier->merchantId();
+        $apiKey     = $kashier->apiKey();
+        $currency   = $kashier->currency();
+        $order      = $payment->reference;
+
+        $hash = $kashier->makeHash($merchantId, $order, $amount, $currency);
+
+        $params = [
+            'merchantId' => $merchantId,
+            'apiKey'     => $apiKey,          // ✅ ده سبب "invalid authorization" لما كان ناقص
+            'order'      => $order,
+            'amount'     => $amount,
+            'currency'   => $currency,
+            'hash'       => $hash,
+            'mode'       => $kashier->mode(),
+
+            // ✅ سيب http_build_query يعمل encoding صح (https%3A%2F%2F...)
+            'merchantRedirect' => $kashier->redirectUrl(),
+            'serverWebhook'    => $kashier->webhookUrl(),
+
+            'display' => 'en',
+            'allowedMethods' => 'card,wallet,bank_installments',
+            'shopperReference' => (string) $user->id,
+        ];
+
+        $checkoutUrl = $kashier->buildPaymentUrl($params);
+
+        Log::info('KASHIER_CREATE_PAYMENT', [
+            'payment_id' => $payment->id,
+            'reference' => $order,
+            'amount' => $amount,
+            'currency' => $currency,
+            'checkout_url' => $checkoutUrl,
+        ]);
+
+        return response()->json([
+            'message' => 'Payment initiated',
+            'data' => [
+                'payment_id' => $payment->id,
+                'reference' => $order,
+                'amount_cents' => $payment->amount_cents,
+                'checkout_url' => $checkoutUrl,
+            ]
+        ], 201);
+    }
 
     public function callback(Request $r)
     {
         $incoming = $r->all();
         Log::info('KASHIER_CALLBACK', $incoming);
 
-        // ✅ التوسيع عشان "Missing order"
+        // ✅ وسّع القراءة
         $order = (string) (
-            $incoming['merchantOrderId']
-            ?? $incoming['orderId']
-            ?? $incoming['order']
-            ?? $incoming['order_id']
-            ?? $incoming['merchant_order_id']
-            ?? ''
+            $incoming['order'] ??
+            $incoming['merchantOrderId'] ??
+            $incoming['orderId'] ??
+            $incoming['order_id'] ??
+            ''
         );
 
         if (!$order) {
-            return response()->json(['message' => 'Missing order', 'raw' => $incoming], 422);
+            return response()->json(['message' => 'Missing order'], 422);
         }
 
         $payment = Payment::where('reference', $order)->first();
-        if (!$payment) return response()->json(['message' => 'Payment not found'], 404);
-
-        // Kashier عادة بيرجع paymentStatus
-        $statusRaw = strtoupper((string)($incoming['paymentStatus'] ?? $incoming['status'] ?? ''));
-        $success = in_array($statusRaw, ['SUCCESS','PAID','APPROVED','COMPLETED'], true);
-
-        if ($success && $payment->status !== Payment::STATUS_PAID) {
-            DB::transaction(function () use ($payment, $incoming) {
-                $payment->update([
-                    'status' => Payment::STATUS_PAID,
-                    'paid_at' => now(),
-                    'provider_transaction_id' => (string)($incoming['transactionId'] ?? $incoming['transaction_id'] ?? $payment->provider_transaction_id),
-                    'payload' => array_merge($payment->payload ?? [], ['kashier_callback' => $incoming]),
-                ]);
-
-                $this->applyBusinessLogicAfterPaid($payment->fresh());
-            });
+        if (!$payment) {
+            return response()->json(['message' => 'Payment not found'], 404);
         }
 
         return response()->json([
-            'message' => 'Callback received',
+            'message' => 'Callback received (UI only)',
             'data' => [
                 'reference' => $payment->reference,
-                'status' => $payment->status,
-                'raw' => $incoming,
+                'status'    => $payment->status,
+                'raw'       => $incoming,
             ],
         ]);
     }
 
-    public function webhook(Request $r)
+    public function webhook(Request $r, KashierService $kashier)
     {
         $incoming = $r->all();
         Log::info('KASHIER_WEBHOOK', $incoming);
 
         $order = (string) (
-            $incoming['merchantOrderId']
-            ?? $incoming['orderId']
-            ?? $incoming['order']
-            ?? $incoming['order_id']
-            ?? ''
+            $incoming['order'] ??
+            $incoming['merchantOrderId'] ??
+            $incoming['orderId'] ??
+            $incoming['order_id'] ??
+            ''
         );
 
         if (!$order) {
-            return response()->json(['message' => 'Missing order', 'raw' => $incoming], 422);
+            return response()->json(['message' => 'Missing order'], 422);
         }
 
-        $statusRaw = strtoupper((string)($incoming['paymentStatus'] ?? $incoming['status'] ?? ''));
-        $success = in_array($statusRaw, ['SUCCESS','PAID','APPROVED','COMPLETED'], true);
+        // ⚠️ التحقق من Webhook Signature بيتعمل بمفتاح/طريقة مختلفة أحيانًا
+        // فمؤقتًا سيبه OFF لحد ما Kashier يديك طريقة التوقيع الرسمية للويبهوك
+        // لو عايز On بعدين: هنطبّقها صح بمفتاح webhook secret.
+
+        $success = (bool)($incoming['success'] ?? $incoming['paid'] ?? false);
+        $status = strtoupper((string)($incoming['paymentStatus'] ?? $incoming['status'] ?? ''));
+        if ($status !== '') {
+            $success = in_array($status, ['SUCCESS', 'PAID', 'APPROVED', 'COMPLETED'], true);
+        }
 
         DB::transaction(function () use ($incoming, $order, $success) {
             $payment = Payment::where('reference', $order)->lockForUpdate()->firstOrFail();

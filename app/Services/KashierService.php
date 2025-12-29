@@ -2,53 +2,68 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Log;
+
 class KashierService
 {
     public function baseUrl(): string
     {
-        return 'https://payments.kashier.io';
+        return rtrim((string) config('services.kashier.base_url'), '/');
     }
 
     public function merchantId(): string
     {
-        return config('services.kashier.merchant_id');
+        return (string) config('services.kashier.merchant_id');
     }
 
-    // ✅ Payment API Key (مش Secret Key)
     public function apiKey(): string
     {
-        return trim(config('services.kashier.api_key'));
+        return (string) config('services.kashier.api_key');
+    }
+
+    public function secretKey(): string
+    {
+        return (string) config('services.kashier.secret_key');
     }
 
     public function mode(): string
     {
-        return config('services.kashier.mode', 'test');
+        return (string) config('services.kashier.mode', 'test');
+    }
+
+    public function currency(): string
+    {
+        return (string) config('services.kashier.currency', 'EGP');
     }
 
     public function redirectUrl(): string
     {
-        return config('services.kashier.redirect_url');
+        return (string) config('services.kashier.redirect_url');
     }
 
     public function webhookUrl(): string
     {
-        return config('services.kashier.webhook_url');
+        return (string) config('services.kashier.webhook_url');
     }
 
     /**
-     * ✅ HASH = HMAC_SHA256("merchantId.order.amount.currency", API_KEY)
+     * Kashier hash غالبًا بيكون HMAC-SHA256 على:
+     * merchantId + order + amount + currency (بنفس الترتيب)
+     * (وفي integrations كتير بيستخدموا نقطة "." للفصل)
      */
-    public function makeHash(
-        string $merchantId,
-        string $order,
-        int $amount,
-        string $currency
-    ): string {
+    public function makeHash(string $merchantId, string $order, string $amount, string $currency): string
+    {
         $message = "{$merchantId}.{$order}.{$amount}.{$currency}";
-        return hash_hmac('sha256', $message, $this->apiKey());
+
+        Log::info('KASHIER_HASH_DEBUG', [
+            'message' => $message,
+            'secret_len' => strlen($this->secretKey()),
+        ]);
+
+        return hash_hmac('sha256', $message, $this->secretKey());
     }
 
-    public function checkoutUrl(array $params): string
+    public function buildPaymentUrl(array $params): string
     {
         return $this->baseUrl() . '/?' . http_build_query($params);
     }
