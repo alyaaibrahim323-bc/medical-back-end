@@ -57,12 +57,12 @@ class KashierService
 
         Log::info('KASHIER_HASH_DEBUG', [
             'message' => $message,
-            'secret_len' => strlen($this->secretKey()),
+            'secret_len' => strlen($this->apiKey()),
         ]);
             $path = "/?payment=".$message;
 
 
-        return hash_hmac('sha256', $path, $this->secretKey(),false);
+        return hash_hmac('sha256', $path, $this->apiKey(),false);
     }
 
     public function buildPaymentUrl(array $params): string
