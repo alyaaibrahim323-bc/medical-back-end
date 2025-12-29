@@ -38,12 +38,13 @@ return [
 // config/services.php
 'kashier' => [
     'merchant_id'  => env('KASHIER_MERCHANT_ID'),
-    'secret_key'   => env('KASHIER_SECRET_KEY'), // ✅ Test/Live Secret Key
-    'base_url'     => env('KASHIER_BASE_URL', 'https://payments.kashier.io'),
+    'api_key'      => env('KASHIER_API_KEY'), // ✅ Payment API Key
     'mode'         => env('KASHIER_MODE', 'test'),
     'redirect_url' => env('KASHIER_REDIRECT_URL'),
     'webhook_url'  => env('KASHIER_WEBHOOK_URL'),
 ],
+
+
 
 
 
