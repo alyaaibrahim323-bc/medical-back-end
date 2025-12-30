@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
 
 class TherapySessionController extends Controller
 {
-   
+
     public function index(Request $r)
     {
         $user = $r->user();
@@ -42,7 +42,7 @@ class TherapySessionController extends Controller
         return response()->json(['data' => $q->paginate(20)]);
     }
 
-    
+
     public function show(Request $r, $id)
     {
         $user = $r->user();
@@ -54,7 +54,7 @@ class TherapySessionController extends Controller
         return response()->json(['data' => $s]);
     }
 
-  
+
     public function store(Request $r, TherapistAvailabilityService $availability)
     {
         $user = $r->user();
@@ -97,7 +97,7 @@ class TherapySessionController extends Controller
         );
     }
 
-    
+
     public function cancel(Request $r, $id)
     {
         $user = $r->user();
@@ -118,7 +118,7 @@ class TherapySessionController extends Controller
         return response()->json(['message' => 'Session cancelled']);
     }
 
-    
+
     protected function createSingleSessionWithPayment($user, Therapist $therapist, Carbon $scheduledAt, int $durationMin)
     {
         $offer = SingleSessionOffer::where('therapist_id', $therapist->id)
@@ -271,7 +271,7 @@ class TherapySessionController extends Controller
 
         app(NotificationService::class)->sendToUser(
             $session->user_id,
-            'session_upcoming',
+            'session upcoming',
             [
                 'doctor' => $session->therapist->user->name,
                 'time'   => $session->scheduled_at->format('g:i A'),

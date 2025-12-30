@@ -13,7 +13,7 @@ use Illuminate\Support\Carbon;
 
 class AdminNotificationController extends Controller
 {
-  
+
    public function index(Request $r)
 {
     $base = Notification::query()
@@ -68,7 +68,7 @@ class AdminNotificationController extends Controller
         return new NotificationResource($notification);
     }
 
-    
+
     public function store(Request $r)
     {
         $data = $r->validate([
@@ -97,7 +97,7 @@ class AdminNotificationController extends Controller
         ];
 
         $notification = Notification::create([
-            'type'         => 'admin_broadcast',
+            'type'         => 'admin Notification',
             'title_en'     => $data['title_en'],
             'title_ar'     => $data['title_ar'],
             'body_en'      => $data['body_en'],
@@ -116,7 +116,7 @@ class AdminNotificationController extends Controller
         return new NotificationResource($notification);
     }
 
-    
+
     public function update(Request $r, $id)
     {
         $notification = Notification::findOrFail($id);
@@ -179,12 +179,12 @@ class AdminNotificationController extends Controller
         return new NotificationResource($notification);
     }
 
-   
+
     public function destroy($id)
     {
         $notification = Notification::findOrFail($id);
 
-     
+
 
         $notification->deliveries()->delete();
         $notification->delete();
@@ -192,7 +192,7 @@ class AdminNotificationController extends Controller
         return response()->json(['message' => 'Notification deleted']);
     }
 
-  
+
     protected function deliverNotificationNow(Notification $notification): void
     {
         $data    = $notification->data ?? [];

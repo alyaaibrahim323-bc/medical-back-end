@@ -63,7 +63,7 @@ class PaymentsController extends Controller
 
             $basePrice = (int) $package->price_cents;
             $discount  = (float) ($package->discount_percent ?? 0);
-            $payable   = (int) round($basePrice * (100 - $discount) / 100);
+            $payable   = (int) round($basePrice  - $discount) ;
 
             $serviceFee = (int) config('fees.package_service_cents', 0);
             $amountCents = $payable + $serviceFee;
@@ -121,7 +121,8 @@ class PaymentsController extends Controller
             'serverWebhook'    => $kashier->webhookUrl(),
 
             'display' => 'en',
-            'allowedMethods' => 'card,wallet,bank_installments',
+            'allowedMethods' => 'card',
+            // ,wallet,bank_installments
             'shopperReference' => (string) $user->id,
         ];
 
@@ -169,17 +170,36 @@ class PaymentsController extends Controller
             return response()->json(['message' => 'Payment not found'], 404);
         }
 
-        return response()->json([
-            'message' => 'Callback received (UI only)',
-            'data' => [
-                'reference' => $payment->reference,
-                'status'    => $payment->status,
-                'raw'       => $incoming,
-            ],
-        ]);
+         $success = (bool)($incoming['success'] ?? $incoming['paid'] ?? false);
+        $status = strtoupper((string)($incoming['paymentStatus'] ?? $incoming['status'] ?? ''));
+        if ($status !== '') {
+            $success = in_array($status, ['SUCCESS', 'PAID', 'APPROVED', 'COMPLETED'], true);
+        }
+
+        DB::transaction(function () use ($incoming, $order, $success) {
+            $payment = Payment::where('reference', $order)->lockForUpdate()->firstOrFail();
+
+            if (in_array($payment->status, [Payment::STATUS_PAID, Payment::STATUS_FAILED], true)) {
+                return;
+            }
+
+            $payment->update([
+                'status' => $success ? Payment::STATUS_PAID : Payment::STATUS_FAILED,
+                'paid_at' => $success ? now() : null,
+                'failed_at' => $success ? null : now(),
+                'provider_transaction_id' => (string)($incoming['transactionId'] ?? $incoming['transaction_id'] ?? $payment->provider_transaction_id),
+                'payload' => array_merge($payment->payload ?? [], ['kashier_webhook' => $incoming]),
+            ]);
+
+            if ($success) {
+                $this->applyBusinessLogicAfterPaid($payment->fresh());
+            }
+        });
+
+        return response()->json(['message' => 'ok']);
     }
 
-    public function webhook(Request $r, KashierService $kashier)
+    public function webhook(Request $r)
     {
         $incoming = $r->all();
         Log::info('KASHIER_WEBHOOK', $incoming);

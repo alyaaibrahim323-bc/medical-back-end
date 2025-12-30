@@ -31,7 +31,7 @@ class ChatMessageController extends Controller
         return ChatMessageResource::collection($messages);
     }
 
-    
+
   public function store(StoreChatMessageRequest $request, Chat $chat): ChatMessageResource
 {
     $this->authorize('message', $chat);
@@ -103,7 +103,7 @@ class ChatMessageController extends Controller
 }
 
 
-  
+
     public function read(ReadChatMessageRequest $request, Chat $chat): JsonResponse
     {
         $this->authorize('participate', $chat);
@@ -132,11 +132,7 @@ class ChatMessageController extends Controller
             ]
         );
 
-        broadcast(new MessageRead(
-            $chat->id,
-            $message->id,
-            $user->id
-        ))->toOthers();
+
 
         $readBy = $message->reads()->pluck('user_id');
 
@@ -201,7 +197,7 @@ class ChatMessageController extends Controller
         );
     }
 
-    
+
     protected function updateChatStatusOnNewMessage(Chat $chat, string $senderRole): void
     {
         $now = now();

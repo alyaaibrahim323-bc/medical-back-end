@@ -15,14 +15,14 @@ use Illuminate\Support\Facades\Schema;
 
 class TherapistController extends Controller
 {
-   
+
    public function index(Request $request)
 {
     $with = ['user'];
 
     if ($request->boolean('with_availability')) {
         $with[] = 'schedules';
-       
+
     }
 
     $base = Therapist::with($with)
@@ -41,6 +41,12 @@ class TherapistController extends Controller
         });
     });
 
+    $counts = [
+        'all'      => (clone $base)->count(),
+        'active'   => (clone $base)->where('is_active', 1)->count(),
+        'inactive' => (clone $base)->where('is_active', 0)->count(),
+    ];
+
     $base->when($request->filled('active'), function ($q) use ($request) {
         $q->where(
             'is_active',
@@ -48,14 +54,8 @@ class TherapistController extends Controller
         );
     });
 
-  
-    $counts = [
-        'all'      => (clone $base)->count(),
-        'active'   => (clone $base)->where('is_active', 1)->count(),
-        'inactive' => (clone $base)->where('is_active', 0)->count(),
-    ];
 
-    
+
     if ($request->boolean('all')) {
         $list = $base->orderByDesc('id')->get();
 
@@ -103,7 +103,7 @@ class TherapistController extends Controller
 
 
 
-    
+
     public function destroy($id)
     {
         Therapist::findOrFail($id)->delete();
@@ -111,7 +111,7 @@ class TherapistController extends Controller
     }
 
 
-   
+
     public function activate(Request $request, $id)
     {
         $request->validate(['is_active' => ['required','boolean']]);
@@ -142,11 +142,11 @@ class TherapistController extends Controller
 
         $query = TherapistSchedule::where('therapist_id', $therapist->id);
 
-      
+
         if (Schema::hasColumn('therapist_schedules', 'day_of_week')) {
             $query->orderBy('day_of_week')->orderBy('from_time');
         } else {
-          
+
             if (Schema::hasColumn('therapist_schedules', 'day')) {
                 $query->orderBy('day');
             }
@@ -178,7 +178,7 @@ class TherapistController extends Controller
     }
 
 
-   
+
     public function sessions(Request $request, $id)
     {
         $therapist = Therapist::findOrFail($id);
@@ -187,12 +187,12 @@ class TherapistController extends Controller
             ->where('therapist_id', $id)
             ->orderByDesc('scheduled_at');
 
-        
+
         if ($request->filled('status')) {
             $q->where('status', $request->status);
         }
 
-  
+
         if ($request->scope === 'upcoming') {
             $q->where('scheduled_at','>=',now());
         }
@@ -200,7 +200,7 @@ class TherapistController extends Controller
             $q->where('scheduled_at','<',now());
         }
 
-       
+
         if ($request->filled('from')) {
             $q->whereDate('scheduled_at','>=',$request->from);
         }
@@ -226,7 +226,7 @@ class TherapistController extends Controller
     }
 
 
-    
+
     public function singleSession($id)
     {
         $row = SingleSessionOffer::where('therapist_id',$id)->first();
