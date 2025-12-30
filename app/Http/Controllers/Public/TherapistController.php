@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Therapist;
 use App\Models\Package;
 use App\Models\SingleSessionOffer;
+use App\Models\TherapySession;
 use App\Services\TherapistAvailabilityService;
 use App\Http\Resources\TherapistChatAvailabilityResource;
 use Carbon\Carbon;
@@ -31,7 +32,7 @@ class TherapistController extends Controller
                 });
             })
 
-           
+
             ->when($request->filled('specialty'), function ($x) use ($request) {
                 $kw = '%' . $request->specialty . '%';
                 $x->where(function ($y) use ($kw) {
@@ -121,54 +122,83 @@ class TherapistController extends Controller
     ]);
 }
 
-    
-    public function availability($id, Request $request, TherapistAvailabilityService $availability)
-    {
-        $request->validate([
-            'from' => ['nullable','date'],
-            'to'   => ['nullable','date','after_or_equal:from'],
-            'slot' => ['nullable','integer','min:15','max:240'],
-        ]);
 
-        $t = Therapist::where('is_active', true)->findOrFail($id);
+   public function availability($id, Request $request, TherapistAvailabilityService $availability)
+{
+    $request->validate([
+        'from' => ['nullable','date'],
+        'to'   => ['nullable','date','after_or_equal:from'],
+        'slot' => ['nullable','integer','min:15','max:240'],
+    ]);
 
-        $from = $request->filled('from')
-            ? Carbon::parse($request->from)->startOfDay()
-            : now()->startOfMonth()->startOfDay();
+    $t = Therapist::where('is_active', true)->findOrFail($id);
 
-        $to = $request->filled('to')
-            ? Carbon::parse($request->to)->endOfDay()
-            : now()->endOfMonth()->endOfDay();
+    $from = $request->filled('from')
+        ? Carbon::parse($request->from)->startOfDay()
+        : now()->startOfMonth()->startOfDay();
 
-        $slot = (int) ($request->slot ?? 60);
+    $to = $request->filled('to')
+        ? Carbon::parse($request->to)->endOfDay()
+        : now()->endOfMonth()->endOfDay();
 
-        $days = $availability->slotsForRange($t->id, $from, $to, $slot);
+    $slot = (int) ($request->slot ?? 60);
 
-        $normalized = collect($days)->map(function (array $slots, string $date) {
-            $carbonDate = Carbon::parse($date);
+    $days = $availability->slotsForRange($t->id, $from, $to, $slot);
 
-            return [
-                'date'      => $carbonDate->toDateString(),
-                'day_name'  => $carbonDate->format('D'),
-                'has_slots' => count($slots) > 0,
-                'slots'     => collect($slots)->map(function (array $s) {
-                    $start = Carbon::parse($s['start']);
-                    $end   = Carbon::parse($s['end']);
+    // ✅ (NEW) هات كل الجلسات المحجوزة في نفس الرينج (scheduled_at + duration_min)
+    $bookings = TherapySession::query()
+        ->where('therapist_id', $t->id)
+        ->whereIn('status', ['pending_payment', 'confirmed']) // عدّلي حسب statuses عندك
+        ->whereBetween('scheduled_at', [$from, $to])
+        ->get(['scheduled_at', 'duration_min']);
 
-                    return [
-                        'start'        => $start->toIso8601String(),
-                        'end'          => $end->toIso8601String(),
-                        'duration_min' => $s['duration_min'] ?? $start->diffInMinutes($end),
-                        'time_label'   => $start->format('h:i A'),
-                    ];
-                })->values(),
-            ];
-        })->values();
+    $normalized = collect($days)->map(function (array $slots, string $date) use ($bookings) {
+        $carbonDate = Carbon::parse($date);
 
-        return response()->json(['data' => $normalized]);
-    }
+        // ✅ (NEW) sessions الخاصة بنفس اليوم فقط
+        $dayBookings = $bookings->filter(function ($b) use ($carbonDate) {
+            return Carbon::parse($b->scheduled_at)->isSameDay($carbonDate);
+        });
 
-    
+        // ✅ (NEW) فلترة الـ slots: شيل أي slot متداخل مع حجز
+        $slots = collect($slots)->filter(function (array $s) use ($dayBookings) {
+            $slotStart = Carbon::parse($s['start']);
+            $slotEnd   = Carbon::parse($s['end']);
+
+            $overlap = $dayBookings->first(function ($b) use ($slotStart, $slotEnd) {
+                $bStart = Carbon::parse($b->scheduled_at);
+                $bEnd   = (clone $bStart)->addMinutes((int) $b->duration_min);
+
+                // overlap rule
+                return $slotStart->lt($bEnd) && $slotEnd->gt($bStart);
+            });
+
+            return !$overlap; // ✅ رجّع غير المتداخل فقط
+        })->values()->all();
+
+        return [
+            'date'      => $carbonDate->toDateString(),
+            'day_name'  => $carbonDate->format('D'),
+            'has_slots' => count($slots) > 0,
+            'slots'     => collect($slots)->map(function (array $s) {
+                $start = Carbon::parse($s['start']);
+                $end   = Carbon::parse($s['end']);
+
+                return [
+                    'start'        => $start->toIso8601String(),
+                    'end'          => $end->toIso8601String(),
+                    'duration_min' => $s['duration_min'] ?? $start->diffInMinutes($end),
+                    'time_label'   => $start->format('h:i A'),
+                ];
+            })->values(),
+        ];
+    })->values();
+
+    return response()->json(['data' => $normalized]);
+}
+
+
+
     public function packages($id)
     {
         $items = Package::where('is_active', true)

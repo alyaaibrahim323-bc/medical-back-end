@@ -63,7 +63,7 @@ class PaymentsController extends Controller
 
             $basePrice = (int) $package->price_cents;
             $discount  = (float) ($package->discount_percent ?? 0);
-            $payable   = (int) round($basePrice  - $discount) ;
+            $payable   = (int) round($basePrice   * (100 - $discount) / 100) ;
 
             $serviceFee = (int) config('fees.package_service_cents', 0);
             $amountCents = $payable + $serviceFee;
