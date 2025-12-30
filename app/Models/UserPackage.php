@@ -32,6 +32,6 @@ class UserPackage extends Model
         $noSessionsLeft = $this->sessions_used >= $this->sessions_total;
         $isExpired      = $this->expires_at && $this->expires_at->isPast();
 
-        return $noSessionsLeft || $isExpired || $this->status === 'completed';
+        return $noSessionsLeft || $isExpired ;
     }
 }
