@@ -16,7 +16,7 @@ class TherapySession extends Model
 
     protected $casts = ['scheduled_at'=>'datetime'];
 
-    const STATUS_PENDING   = 'pending payment';
+    const STATUS_PENDING   = 'pending_payment';
     const STATUS_CONFIRMED = 'confirmed';
     const STATUS_COMPLETED = 'completed';
     const STATUS_CANCELLED = 'cancelled';
