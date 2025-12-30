@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Therapist;
 use App\Models\Package;
 use App\Models\SingleSessionOffer;
-use App\Models\TherapySession;
 use App\Services\TherapistAvailabilityService;
 use App\Http\Resources\TherapistChatAvailabilityResource;
 use Carbon\Carbon;
@@ -123,80 +122,51 @@ class TherapistController extends Controller
 }
 
 
-   public function availability($id, Request $request, TherapistAvailabilityService $availability)
-{
-    $request->validate([
-        'from' => ['nullable','date'],
-        'to'   => ['nullable','date','after_or_equal:from'],
-        'slot' => ['nullable','integer','min:15','max:240'],
-    ]);
+    public function availability($id, Request $request, TherapistAvailabilityService $availability)
+    {
+        $request->validate([
+            'from' => ['nullable','date'],
+            'to'   => ['nullable','date','after_or_equal:from'],
+            'slot' => ['nullable','integer','min:15','max:240'],
+        ]);
 
-    $t = Therapist::where('is_active', true)->findOrFail($id);
+        $t = Therapist::where('is_active', true)->findOrFail($id);
 
-    $from = $request->filled('from')
-        ? Carbon::parse($request->from)->startOfDay()
-        : now()->startOfMonth()->startOfDay();
+        $from = $request->filled('from')
+            ? Carbon::parse($request->from)->startOfDay()
+            : now()->startOfMonth()->startOfDay();
 
-    $to = $request->filled('to')
-        ? Carbon::parse($request->to)->endOfDay()
-        : now()->endOfMonth()->endOfDay();
+        $to = $request->filled('to')
+            ? Carbon::parse($request->to)->endOfDay()
+            : now()->endOfMonth()->endOfDay();
 
-    $slot = (int) ($request->slot ?? 60);
+        $slot = (int) ($request->slot ?? 60);
 
-    $days = $availability->slotsForRange($t->id, $from, $to, $slot);
+        $days = $availability->slotsForRange($t->id, $from, $to, $slot);
 
-    // ✅ (NEW) هات كل الجلسات المحجوزة في نفس الرينج (scheduled_at + duration_min)
-    $bookings = TherapySession::query()
-        ->where('therapist_id', $t->id)
-        ->whereIn('status', ['pending_payment', 'confirmed']) // عدّلي حسب statuses عندك
-        ->whereBetween('scheduled_at', [$from, $to])
-        ->get(['scheduled_at', 'duration_min']);
+        $normalized = collect($days)->map(function (array $slots, string $date) {
+            $carbonDate = Carbon::parse($date);
 
-    $normalized = collect($days)->map(function (array $slots, string $date) use ($bookings) {
-        $carbonDate = Carbon::parse($date);
+            return [
+                'date'      => $carbonDate->toDateString(),
+                'day_name'  => $carbonDate->format('D'),
+                'has_slots' => count($slots) > 0,
+                'slots'     => collect($slots)->map(function (array $s) {
+                    $start = Carbon::parse($s['start']);
+                    $end   = Carbon::parse($s['end']);
 
-        // ✅ (NEW) sessions الخاصة بنفس اليوم فقط
-        $dayBookings = $bookings->filter(function ($b) use ($carbonDate) {
-            return Carbon::parse($b->scheduled_at)->isSameDay($carbonDate);
-        });
+                    return [
+                        'start'        => $start->toIso8601String(),
+                        'end'          => $end->toIso8601String(),
+                        'duration_min' => $s['duration_min'] ?? $start->diffInMinutes($end),
+                        'time_label'   => $start->format('h:i A'),
+                    ];
+                })->values(),
+            ];
+        })->values();
 
-        // ✅ (NEW) فلترة الـ slots: شيل أي slot متداخل مع حجز
-        $slots = collect($slots)->filter(function (array $s) use ($dayBookings) {
-            $slotStart = Carbon::parse($s['start']);
-            $slotEnd   = Carbon::parse($s['end']);
-
-            $overlap = $dayBookings->first(function ($b) use ($slotStart, $slotEnd) {
-                $bStart = Carbon::parse($b->scheduled_at);
-                $bEnd   = (clone $bStart)->addMinutes((int) $b->duration_min);
-
-                // overlap rule
-                return $slotStart->lt($bEnd) && $slotEnd->gt($bStart);
-            });
-
-            return !$overlap; // ✅ رجّع غير المتداخل فقط
-        })->values()->all();
-
-        return [
-            'date'      => $carbonDate->toDateString(),
-            'day_name'  => $carbonDate->format('D'),
-            'has_slots' => count($slots) > 0,
-            'slots'     => collect($slots)->map(function (array $s) {
-                $start = Carbon::parse($s['start']);
-                $end   = Carbon::parse($s['end']);
-
-                return [
-                    'start'        => $start->toIso8601String(),
-                    'end'          => $end->toIso8601String(),
-                    'duration_min' => $s['duration_min'] ?? $start->diffInMinutes($end),
-                    'time_label'   => $start->format('h:i A'),
-                ];
-            })->values(),
-        ];
-    })->values();
-
-    return response()->json(['data' => $normalized]);
-}
-
+        return response()->json(['data' => $normalized]);
+    }
 
 
     public function packages($id)
