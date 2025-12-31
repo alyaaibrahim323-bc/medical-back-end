@@ -9,7 +9,6 @@ class UserPackageResource extends JsonResource
 {
     public function toArray($request)
     {
-        // اسم الباكدج حسب اللغة المطلوبة (?lang=ar/en) مع fallback
         $locale     = $request->query('lang', 'en');
         $pkgNameRaw = $this->package->name ?? [];
 
@@ -28,7 +27,7 @@ class UserPackageResource extends JsonResource
         return [
             'id' => $this->id,
 
-            'client' => [
+            'user' => [
                 'id'     => $this->user_id,
                 'name'   => optional($this->user)->name,
                 'email'  => optional($this->user)->email,
