@@ -27,7 +27,7 @@ class ChatResource extends JsonResource
             'last_message_at' => $this->last_message_at?->toIso8601String(),
 
             // 👇 بيانات الكلاينت + avatar
-            'user' => [
+            'client' => [
                 'id'     => $this->user->id,
                 'name'   => $this->user->name,
                 'email'  => $this->user->email,

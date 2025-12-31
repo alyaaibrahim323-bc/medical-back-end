@@ -27,7 +27,7 @@ class UserPackageResource extends JsonResource
         return [
             'id' => $this->id,
 
-            'user' => [
+            'client' => [
                 'id'     => $this->user_id,
                 'name'   => optional($this->user)->name,
                 'email'  => optional($this->user)->email,
