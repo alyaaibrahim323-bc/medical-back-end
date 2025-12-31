@@ -233,6 +233,22 @@ class TherapySessionController extends Controller
 
         $session = null;
 
+        $hasActiveSession = TherapySession::query()
+        ->where('user_id', $user->id)
+        ->where('user_package_id', $userPackage->id)
+        ->whereIn('status', [
+            TherapySession::STATUS_PENDING,
+            TherapySession::STATUS_CONFIRMED,
+        ])
+        ->exists();
+
+    if ($hasActiveSession) {
+        return response()->json([
+            'message' => 'You already have an active session in this package. Complete it before booking another one.'
+        ], 422);
+}
+
+
         DB::transaction(function () use (
             $user,
             $therapist,
@@ -258,13 +274,7 @@ class TherapySessionController extends Controller
                 'notes'              => null,
             ]);
 
-            $userPackage->sessions_used += 1;
 
-            if ($userPackage->sessions_used >= $userPackage->sessions_total) {
-                $userPackage->status = 'completed';
-            }
-
-            $userPackage->save();
         });
 
         /** @var \App\Models\TherapySession $session */
