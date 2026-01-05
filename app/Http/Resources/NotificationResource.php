@@ -29,6 +29,7 @@ class NotificationResource extends JsonResource
             'created_at' => $this->created_at,
             'time_ago'   => $this->created_at?->diffForHumans(),
             'is_read'    => optional($this->pivot)->read_at !== null,
+            'status'     =>$this->status,
         ];
     }
 
