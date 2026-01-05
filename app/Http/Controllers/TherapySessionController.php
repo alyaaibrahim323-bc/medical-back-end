@@ -119,87 +119,84 @@ class TherapySessionController extends Controller
     }
 
 
-    protected function createSingleSessionWithPayment($user, Therapist $therapist, Carbon $scheduledAt, int $durationMin)
-    {
-        $offer = SingleSessionOffer::where('therapist_id', $therapist->id)
-            ->where('is_active', true)
-            ->first();
+   protected function createSingleSessionWithPayment($user, Therapist $therapist, Carbon $scheduledAt, int $durationMin)
+{
+    $offer = SingleSessionOffer::where('therapist_id', $therapist->id)
+        ->where('is_active', true)
+        ->first();
 
-        $sessionFee = $offer
-            ? (int) $offer->price_cents
-            : (int) ($therapist->price_cents ?? 0);
+    $sessionFee = $offer
+        ? (int) $offer->price_cents
+        : (int) ($therapist->price_cents ?? 0);
 
-        $currency = $offer
-            ? ($offer->currency ?? 'EGP')
-            : ($therapist->currency ?? 'EGP');
+    $currency = $offer
+        ? ($offer->currency ?? 'EGP')
+        : ($therapist->currency ?? 'EGP');
 
-        $serviceFee = (int) config('fees.single_session_service_cents', 0);
+    $serviceFee = (int) config('fees.single_session_service_cents', 0);
+    $total = $sessionFee + $serviceFee;
 
-        $total = $sessionFee + $serviceFee;
+    $session = null;
+    $payment = null;
 
-        $session = null;
-        $payment = null;
+    DB::transaction(function () use (
+        $user,
+        $therapist,
+        $scheduledAt,
+        $durationMin,
+        $sessionFee,
+        $serviceFee,
+        $total,
+        $currency,
+        &$session,
+        &$payment
+    ) {
+        $session = TherapySession::create([
+            'user_id'      => $user->id,
+            'therapist_id' => $therapist->id,
+            'scheduled_at' => $scheduledAt,
+            'duration_min' => $durationMin,
+            'status'       => TherapySession::STATUS_PENDING, // pending_payment
+            'billing_type' => 'single',
+        ]);
 
-        DB::transaction(function () use (
-            $user,
-            $therapist,
-            $scheduledAt,
-            $durationMin,
-            $sessionFee,
-            $serviceFee,
-            $total,
-            $currency,
-            &$session,
-            &$payment
-        ) {
-            $session = TherapySession::create([
-                'user_id'      => $user->id,
-                'therapist_id' => $therapist->id,
-                'scheduled_at' => $scheduledAt,
-                'duration_min' => $durationMin,
-                'status'       => TherapySession::STATUS_PENDING,
-                'billing_type' => 'single',
-            ]);
+        $payment = Payment::create([
+            'user_id'            => $user->id,
+            'therapist_id'       => $therapist->id,
+            'therapy_session_id' => $session->id,
+            'user_package_id'    => null,
+            'purpose'            => Payment::PURPOSE_SINGLE_SESSION,
+            'amount_cents'       => $total,
+            'currency'           => $currency,
+            'provider'           => 'kashier', // ✅ بدل paymob
+            'status'             => Payment::STATUS_PENDING,
+            'reference'          => 'SS-' . Str::uuid(),
+            'payload'            => [
+                'session_fee_cents' => $sessionFee,
+                'service_fee_cents' => $serviceFee,
+                'duration_min'      => $durationMin,
+                'therapist_id'      => $therapist->id,
+                'user_id'           => $user->id,
+            ],
+        ]);
+    });
 
-            $payment = Payment::create([
-                'user_id'            => $user->id,
-                'therapist_id'       => $therapist->id,
-                'therapy_session_id' => $session->id,
-                'user_package_id'    => null,
-                'purpose'            => 'single_session',
-                'amount_cents'       => $total,
-                'currency'           => $currency,
-                'provider'           => 'paymob',
-                'status'             => 'pending',
-                'reference'          => 'SS-' . Str::uuid(),
-                'payload'            => [
-                    'session_fee_cents' => $sessionFee,
-                    'service_fee_cents' => $serviceFee,
-                    'duration_min'      => $durationMin,
-                    'therapist_id'      => $therapist->id,
-                    'user_id'           => $user->id,
-                ],
-            ]);
-        });
+    return response()->json([
+        'data' => [
+            'session' => $session->load('therapist.user'),
+            'payment' => [
+                'id'                => $payment->id,
+                'amount_cents'      => $payment->amount_cents,
+                'currency'          => $payment->currency,
+                'session_fee_cents' => $sessionFee,
+                'service_fee_cents' => $serviceFee,
+                'reference'         => $payment->reference,
+            ],
+            'billing_source' => 'single',
+        ]
+    ], 201);
+}
 
-        /** @var \App\Models\TherapySession $session */
-        /** @var \App\Models\Payment $payment */
-
-        return response()->json([
-            'data' => [
-                'session' => $session->load('therapist.user'),
-                'payment' => [
-                    'id'                => $payment->id,
-                    'amount_cents'      => $payment->amount_cents,
-                    'currency'          => $payment->currency,
-                    'session_fee_cents' => $sessionFee,
-                    'service_fee_cents' => $serviceFee,
-                    'reference'         => $payment->reference,
-                ],
-                'billing_source' => 'single',
-            ]
-        ], 201);
-    }
 
     protected function createSessionFromPackage(
         $user,

@@ -20,7 +20,7 @@ class TherapySession extends Model
     const STATUS_CONFIRMED = 'confirmed';
     const STATUS_COMPLETED = 'completed';
     const STATUS_CANCELLED = 'cancelled';
-    const STATUS_NO_SHOW   = 'no show';
+    const STATUS_NO_SHOW   = 'no_show';
 
     public function user(){ return $this->belongsTo(User::class); }
     public function therapist(){ return $this->belongsTo(Therapist::class); }

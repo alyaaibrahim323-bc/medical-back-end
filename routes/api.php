@@ -279,7 +279,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::delete('/therapy-sessions/{id}', [TherapySessionController::class, 'cancel']);
 
     // Packages purchase & mine
-    Route::post('/packages/{id}/checkout',  [PackageCheckoutController::class, 'checkout']);
+    // Route::post('/packages/{id}/checkout',  [PackageCheckoutController::class, 'checkout']);
     Route::get('/me/packages',              [MePackagesController::class, 'index']);
     Route::get('/me/packages/{id}',         [MePackagesController::class, 'show']);
 });
