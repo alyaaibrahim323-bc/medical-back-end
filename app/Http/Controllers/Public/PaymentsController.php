@@ -60,6 +60,22 @@ class PaymentsController extends Controller
         } else {
             $package = Package::where('is_active', true)->findOrFail($data['id']);
             $therapistId = $package->created_by_therapist_id;
+              $hasActiveNotFinished = UserPackage::query()
+                ->where('user_id', $user->id)
+                ->where('therapist_id', $therapistId) // لو عايزاها عامة شيلي السطر ده
+                ->where('status', 'active')
+                ->whereColumn('sessions_used', '<', 'sessions_total')
+                ->where(function ($q) {
+                    $q->whereNull('expires_at')
+                      ->orWhere('expires_at', '>', now());
+                })
+                ->exists();
+
+            if ($hasActiveNotFinished) {
+                return response()->json([
+                    'message' => 'You already have an active package. Please finish it before purchasing another one.'
+                ], 422);
+            }
 
             $basePrice = (int) $package->price_cents;
             $discount  = (float) ($package->discount_percent ?? 0);
