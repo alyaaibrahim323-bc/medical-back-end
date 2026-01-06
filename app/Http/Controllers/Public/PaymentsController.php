@@ -221,18 +221,12 @@ class PaymentsController extends Controller
         Log::info('KASHIER_WEBHOOK', $incoming);
 
         $order = (string) (
-            $incoming['order'] ??
-            $incoming['merchantOrderId'] ??
-            $incoming['orderId'] ??
-            $incoming['order_id'] ??
-            ''
+            $incoming['merchantOrderId']
         );
 
-        if (!$order) {
-            return response()->json(['message' => 'Missing order'], 422);
-        }
 
-    $payment = Payment::where('reference', $order)->first();
+        print_r($order);
+        $payment = Payment::where('reference', $order)->first();
         if (!$payment) {
             return response()->json(['message' => 'Payment not found'], 404);
         }
