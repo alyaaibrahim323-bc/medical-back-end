@@ -235,11 +235,8 @@ class PaymentsController extends Controller
             return response()->json(['message' => 'Payment not found'], 404);
         }
 
-        $success = (bool)($incoming['success'] ?? $incoming['paid'] ?? false);
-        $status = strtoupper((string)($incoming['paymentStatus'] ?? $incoming['status'] ?? ''));
-        if ($status !== '') {
+        $status = strtoupper((string)($incoming['data']['status']  ?? ''));
             $success = in_array($status, ['SUCCESS', 'PAID', 'APPROVED', 'COMPLETED'], true);
-        }
 
         DB::transaction(function () use ($incoming, $order, $success) {
             $payment = Payment::where('reference', $order)->lockForUpdate()->firstOrFail();
@@ -252,7 +249,7 @@ class PaymentsController extends Controller
                 'status' => $success ? Payment::STATUS_PAID : Payment::STATUS_FAILED,
                 'paid_at' => $success ? now() : null,
                 'failed_at' => $success ? null : now(),
-                'provider_transaction_id' => (string)($incoming['transactionId'] ?? $incoming['transaction_id'] ?? $payment->provider_transaction_id),
+                'provider_transaction_id' => (string)($incoming['data']['transactionId'] ?? $payment->provider_transaction_id),
                 'payload' => array_merge($payment->payload ?? [], ['kashier_webhook' => $incoming]),
             ]);
 
