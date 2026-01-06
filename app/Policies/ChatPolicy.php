@@ -10,10 +10,16 @@ class ChatPolicy
 {
     use HandlesAuthorization;
 
-    public function view(User $user, Chat $chat): bool
-    {
-        return $this->participate($user, $chat) || $user->hasRole('admin');
-    }
+    private function isAdmin(User $user): bool
+{
+    return strtolower((string)$user->role) === 'admin'
+        || $user->hasRole('admin');
+}
+
+   public function view(User $user, Chat $chat): bool
+{
+    return $this->participate($user, $chat) || $this->isAdmin($user);
+}
 
     public function participate(User $user, Chat $chat): bool
     {
@@ -25,30 +31,15 @@ class ChatPolicy
         return $isClient || $isTherapist;
     }
 
-    public function message(User $user, Chat $chat): bool
-    {
-        if ($chat->status === 'closed') {
-            return false;
-        }
-
-        if ($user->hasRole('admin')) {
-            return true;
-        }
-
-        return $this->participate($user, $chat);
-    }
-
-    public function assign(User $user, Chat $chat): bool
+   public function message(User $user, Chat $chat): bool
 {
-    if ($user->hasRole('admin')) {
-        return true;
-    }
+    if ($chat->status === 'closed') return false;
+    return $this->isAdmin($user) || $this->participate($user, $chat);
+}
 
-    if ($user->role === 'admin') {
-        return true;
-    }
-
-    return false;
+ public function assign(User $user, Chat $chat): bool
+{
+    return $this->isAdmin($user);
 }
 
 }
