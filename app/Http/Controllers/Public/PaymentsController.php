@@ -232,9 +232,10 @@ class PaymentsController extends Controller
             return response()->json(['message' => 'Missing order'], 422);
         }
 
-        // ⚠️ التحقق من Webhook Signature بيتعمل بمفتاح/طريقة مختلفة أحيانًا
-        // فمؤقتًا سيبه OFF لحد ما Kashier يديك طريقة التوقيع الرسمية للويبهوك
-        // لو عايز On بعدين: هنطبّقها صح بمفتاح webhook secret.
+    $payment = Payment::where('reference', $order)->first();
+        if (!$payment) {
+            return response()->json(['message' => 'Payment not found'], 404);
+        }
 
         $success = (bool)($incoming['success'] ?? $incoming['paid'] ?? false);
         $status = strtoupper((string)($incoming['paymentStatus'] ?? $incoming['status'] ?? ''));
