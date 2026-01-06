@@ -6,7 +6,6 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
-
 class EnsureRole
 {
     public function handle(Request $request, Closure $next, ...$roles)
@@ -23,8 +22,8 @@ Log::info('ROLE_DEBUG', [
 ]);
 
         // role ممكن تكون string واحدة
-        if (!in_array($user->role, $roles)) {
-            return response()->json(['message' => 'Forbidden'], 403);
+        if (!in_array($user->role, $roles, true)) {
+return response()->json(['message' => 'Forbidden (EnsureRole)'], 403);
         }
 
         return $next($request);

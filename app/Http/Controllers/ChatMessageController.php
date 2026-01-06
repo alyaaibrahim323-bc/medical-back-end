@@ -21,7 +21,18 @@ class ChatMessageController extends Controller
 {
     public function index(Request $request, Chat $chat)
     {
-        $this->authorize('view', $chat);
+Log::info('AUTHZ_DEBUG_BEFORE', [
+  'user_id' => $request->user()->id,
+  'role_col' => $request->user()->role,
+  'hasRole_admin' => $request->user()->hasRole('admin'),
+  'chat_id' => $chat->id,
+  'chat_user_id' => $chat->user_id,
+  'chat_therapist_id' => $chat->therapist_id,
+]);
+
+$this->authorize('view', $chat);
+
+Log::info('AUTHZ_DEBUG_AFTER', ['ok' => true]);
 
         $messages = $chat->messages()
             ->with(['sender', 'reads'])
