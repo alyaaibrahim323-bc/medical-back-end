@@ -16,7 +16,7 @@ class EnsureRole
         }
 
         // role ممكن تكون string واحدة
-        if (!in_array($user->role, $roles, true)) {
+        if (!in_array($user->role, $roles)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
