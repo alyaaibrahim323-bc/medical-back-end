@@ -230,7 +230,7 @@ class PaymentsController extends Controller
 
 
 
-    $payment = Payment::where('reference', $order)->first();
+       $payment = Payment::where('reference', $order)->first();
         if (!$payment) {
             return response()->json(['message' => 'Payment not found'], 404);
         }
