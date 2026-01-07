@@ -7,6 +7,7 @@ use App\Models\Payment;
 use App\Models\TherapySession;
 use App\Models\Package;
 use App\Models\UserPackage;
+use App\Models\SingleSessionOffer;
 use App\Services\KashierService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,153 +16,225 @@ use Illuminate\Support\Str;
 
 class PaymentsController extends Controller
 {
-    public function createKashier(Request $r, KashierService $kashier)
-    {
-        Log::info('PAYMENT_REQUEST_DEBUG', [
-            'user' => $r->user()?->id,
-            'input' => $r->all(),
-        ]);
+   public function createKashier(Request $r, KashierService $kashier)
+{
+    Log::info('PAYMENT_REQUEST_DEBUG', [
+        'user' => $r->user()?->id,
+        'input' => $r->all(),
+    ]);
 
-        $data = $r->validate([
-            'purpose' => ['required', 'in:single_session,package'],
-            'id'      => ['required', 'integer'],
-        ]);
+    $data = $r->validate([
+        'purpose' => ['required', 'in:single_session,package'],
+        'id'      => ['required', 'integer'],
+    ]);
 
-        $user = $r->user();
+    $user = $r->user();
 
-        $therapistId = null;
-        $therapySessionId = null;
-        $userPackageId = null;
-        $amountCents = 0;
-        $payload = [];
+    $therapistId = null;
+    $therapySessionId = null;
+    $userPackageId = null;
 
-        if ($data['purpose'] === Payment::PURPOSE_SINGLE_SESSION) {
-            $session = TherapySession::with('therapist')
-                ->where('user_id', $user->id)
-                ->findOrFail($data['id']);
+    $amountCents = 0;
+    $payload = [];
 
-            if (($session->status ?? null) !== 'pending_payment') {
-                return response()->json(['message' => 'Session not payable'], 422);
-            }
+    // ✅ this will be returned to Flutter like the screenshot
+    $summary = [
+        'base_fee_cents' => 0,
+        'service_fee_cents' => 0,
+        'discount_cents' => 0,
+        'total_cents' => 0,
+        'discount_percent' => 0,
+    ];
 
-            $sessionFee = (int) ($session->therapist->price_cents ?? 0);
-            $serviceFee = (int) config('fees.single_session_service_cents', 0);
-            $amountCents = $sessionFee + $serviceFee;
+    if ($data['purpose'] === Payment::PURPOSE_SINGLE_SESSION) {
 
-            $therapistId = $session->therapist_id;
-            $therapySessionId = $session->id;
+        $session = TherapySession::with('therapist')
+            ->where('user_id', $user->id)
+            ->findOrFail($data['id']);
 
-            $payload = [
-                'type' => 'single_session',
-                'session_fee_cents' => $sessionFee,
-                'service_fee_cents' => $serviceFee,
-                'session_id' => $session->id,
-            ];
-        } else {
-            $package = Package::where('is_active', true)->findOrFail($data['id']);
-            $therapistId = $package->created_by_therapist_id;
-              $hasActiveNotFinished = UserPackage::query()
-                ->where('user_id', $user->id)
-                ->where('therapist_id', $therapistId) // لو عايزاها عامة شيلي السطر ده
-                ->where('status', 'active')
-                ->whereColumn('sessions_used', '<', 'sessions_total')
-                ->where(function ($q) {
-                    $q->whereNull('expires_at')
-                      ->orWhere('expires_at', '>', now());
-                })
-                ->exists();
-
-            if ($hasActiveNotFinished) {
-                return response()->json([
-                    'message' => 'You already have an active package. Please finish it before purchasing another one.'
-                ], 422);
-            }
-
-            $basePrice = (int) $package->price_cents;
-            $discount  = (float) ($package->discount_percent ?? 0);
-            $payable   = (int) round($basePrice   * (100 - $discount) / 100) ;
-
-            $serviceFee = (int) config('fees.package_service_cents', 0);
-            $amountCents = $payable + $serviceFee;
-
-            $payload = [
-                'type' => 'package',
-                'package_id' => $package->id,
-                'base_price_cents' => $basePrice,
-                'discount_percent' => $discount,
-                'payable_cents' => $payable,
-                'service_fee_cents' => $serviceFee,
-            ];
+        if (($session->status ?? null) !== 'pending_payment') {
+            return response()->json(['message' => 'Session not payable'], 422);
         }
 
-        // Kashier expects amount in smallest unit (piasters) كثير من integrations
-        $amount = (string) $amountCents; // مثال: 2465 = 24.65 EGP
+        // ✅ IMPORTANT: keep relations
+        $therapistId = $session->therapist_id;
+        $therapySessionId = $session->id;
 
-        $reference = strtoupper(Str::random(10));
+        $sessionFee = (int) ($session->therapist->price_cents ?? 0);
 
-        $payment = DB::transaction(function () use (
-            $user, $therapistId, $therapySessionId, $userPackageId, $data, $amountCents, $reference, $payload
-        ) {
-            return Payment::create([
-                'user_id' => $user->id,
-                'therapist_id' => $therapistId,
-                'therapy_session_id' => $therapySessionId,
-                'user_package_id' => $userPackageId,
-                'purpose' => $data['purpose'],
-                'amount_cents' => $amountCents,
-                'currency' => 'EGP',
-                'provider' => 'kashier',
-                'status' => Payment::STATUS_PENDING,
-                'reference' => $reference,
-                'payload' => $payload,
-            ]);
-        });
+        // ✅ get active offer for this therapist (single-session offer)
+        $offer = SingleSessionOffer::query()
+            ->where('therapist_id', $session->therapist_id)
+            ->where('is_active', true)
+            ->orderByDesc('id')
+            ->first();
 
-        $merchantId = $kashier->merchantId();
-        $apiKey     = $kashier->apiKey();
-        $currency   = $kashier->currency();
-        $order      = $payment->reference;
+        $offerPriceCents = (int) ($offer->price_cents ?? 0);
+        $discountPercent = (float) ($offer->discount_percent ?? 0);
+        $discountPercent = max(0, min(100, $discountPercent)); // safety
 
-        $hash = $kashier->makeHash($merchantId, $order, $amount, $currency);
+        // ✅ pricing rule:
+        // if offer has fixed price -> use it as net session fee
+        // else use percent discount on therapist price
+        if ($offer && $offerPriceCents > 0) {
+            $netSessionFee = $offerPriceCents;
+            $discountCents = max(0, $sessionFee - $netSessionFee);
+        } else {
+            $discountCents = (int) round($sessionFee * $discountPercent / 100);
+            $netSessionFee = max(0, $sessionFee - $discountCents);
+        }
 
-        $params = [
-            'merchantId' => $merchantId,
-            'apiKey'     => $apiKey,
-            'order'      => $order,
-            'amount'     => $amount,
-            'currency'   => $currency,
-            'hash'       => $hash,
-            'mode'       => $kashier->mode(),
+        $serviceFee = (int) config('fees.single_session_service_cents', 0);
+        $amountCents = $netSessionFee + $serviceFee;
 
-            'merchantRedirect' => $kashier->redirectUrl(),
-            'serverWebhook'    => $kashier->webhookUrl(),
-
-            'display' => 'en',
-            'allowedMethods' => 'card',
-            // ,wallet,bank_installments
-            'shopperReference' => (string) $user->id,
+        $summary = [
+            'base_fee_cents' => $sessionFee,
+            'service_fee_cents' => $serviceFee,
+            'discount_cents' => $discountCents,
+            'total_cents' => $amountCents,
+            'discount_percent' => $discountPercent,
         ];
 
-        $checkoutUrl = $kashier->buildPaymentUrl($params);
+        $payload = [
+            'type' => 'single_session',
+            'session_id' => $session->id,
+            'therapist_id' => $session->therapist_id,
 
-        Log::info('KASHIER_CREATE_PAYMENT', [
+            'session_fee_cents' => $sessionFee,
+            'discount_percent' => $discountPercent,
+            'discount_cents' => $discountCents,
+            'net_session_fee_cents' => $netSessionFee,
+
+            'service_fee_cents' => $serviceFee,
+            'offer_id' => $offer?->id,
+            'offer_price_cents' => $offerPriceCents,
+
+            'summary' => $summary,
+        ];
+
+    } else {
+
+        $package = Package::where('is_active', true)->findOrFail($data['id']);
+        $therapistId = $package->created_by_therapist_id;
+
+        $hasActiveNotFinished = UserPackage::query()
+            ->where('user_id', $user->id)
+            ->where('therapist_id', $therapistId) // لو عايزاها عامة شيلي السطر ده
+            ->where('status', 'active')
+            ->whereColumn('sessions_used', '<', 'sessions_total')
+            ->where(function ($q) {
+                $q->whereNull('expires_at')
+                  ->orWhere('expires_at', '>', now());
+            })
+            ->exists();
+
+        if ($hasActiveNotFinished) {
+            return response()->json([
+                'message' => 'You already have an active package. Please finish it before purchasing another one.'
+            ], 422);
+        }
+
+        $basePrice = (int) $package->price_cents;
+        $discount  = (float) ($package->discount_percent ?? 0);
+
+        $payable   = (int) round($basePrice * (100 - $discount) / 100);
+
+        $serviceFee = (int) config('fees.package_service_cents', 0);
+        $amountCents = $payable + $serviceFee;
+
+        $discountCents = max(0, $basePrice - $payable);
+
+        $summary = [
+            'base_fee_cents' => $basePrice,
+            'service_fee_cents' => $serviceFee,
+            'discount_cents' => $discountCents,
+            'total_cents' => $amountCents,
+            'discount_percent' => $discount,
+        ];
+
+        $payload = [
+            'type' => 'package',
+            'package_id' => $package->id,
+            'base_price_cents' => $basePrice,
+            'discount_percent' => $discount,
+            'payable_cents' => $payable,
+            'service_fee_cents' => $serviceFee,
+
+            'summary' => $summary,
+        ];
+    }
+
+    // Kashier expects amount in smallest unit (piasters)
+    $amount = (string) $amountCents;
+
+    $reference = strtoupper(Str::random(10));
+
+    $payment = DB::transaction(function () use (
+        $user, $therapistId, $therapySessionId, $userPackageId, $data, $amountCents, $reference, $payload
+    ) {
+        return Payment::create([
+            'user_id' => $user->id,
+            'therapist_id' => $therapistId,
+            'therapy_session_id' => $therapySessionId,
+            'user_package_id' => $userPackageId,
+            'purpose' => $data['purpose'],
+            'amount_cents' => $amountCents,
+            'currency' => 'EGP',
+            'provider' => 'kashier',
+            'status' => Payment::STATUS_PENDING,
+            'reference' => $reference,
+            'payload' => $payload,
+        ]);
+    });
+
+    $merchantId = $kashier->merchantId();
+    $apiKey     = $kashier->apiKey();
+    $currency   = $kashier->currency();
+    $order      = $payment->reference;
+
+    $hash = $kashier->makeHash($merchantId, $order, $amount, $currency);
+
+    $params = [
+        'merchantId' => $merchantId,
+        'apiKey'     => $apiKey,
+        'order'      => $order,
+        'amount'     => $amount,
+        'currency'   => $currency,
+        'hash'       => $hash,
+        'mode'       => $kashier->mode(),
+
+        'merchantRedirect' => $kashier->redirectUrl(),
+        'serverWebhook'    => $kashier->webhookUrl(),
+
+        'display' => 'en',
+        'allowedMethods' => 'card',
+        'shopperReference' => (string) $user->id,
+    ];
+
+    $checkoutUrl = $kashier->buildPaymentUrl($params);
+
+    Log::info('KASHIER_CREATE_PAYMENT', [
+        'payment_id' => $payment->id,
+        'reference' => $order,
+        'amount' => $amount,
+        'currency' => $currency,
+        'checkout_url' => $checkoutUrl,
+        'summary' => $summary,
+    ]);
+
+    return response()->json([
+        'message' => 'Payment initiated',
+        'data' => [
             'payment_id' => $payment->id,
             'reference' => $order,
-            'amount' => $amount,
+            'purpose' => $data['purpose'],
             'currency' => $currency,
+            'amount_cents' => $payment->amount_cents,
             'checkout_url' => $checkoutUrl,
-        ]);
-
-        return response()->json([
-            'message' => 'Payment initiated',
-            'data' => [
-                'payment_id' => $payment->id,
-                'reference' => $order,
-                'amount_cents' => $payment->amount_cents,
-                'checkout_url' => $checkoutUrl,
-            ]
-        ], 201);
-    }
+            'summary' => $summary,
+        ]
+    ], 201);
+}
 
     public function callback(Request $r)
     {

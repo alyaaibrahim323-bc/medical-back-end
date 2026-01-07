@@ -21,8 +21,6 @@ class AdminChatResource extends JsonResource
             'last_message'        => $lastMsg?->body,
             'last_from'           => $lastMsg?->sender_role,
             'last_message_at'     => $this->last_message_at?->toDateTimeString(),
-
-            // 👇 هنا التعديل المهم
             'session_date'        => $this->session
                                         ? ($this->session->scheduled_at
                                             ? $this->session->scheduled_at->toDateString()
