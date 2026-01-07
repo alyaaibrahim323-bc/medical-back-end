@@ -17,50 +17,48 @@ class TherapistController extends Controller
     public function index(Request $request)
     {
         $q = Therapist::with(['user', 'activeSingleSessionOffer'])
-            ->where('is_active', true)
+        ->where('therapists.is_active', true)
 
-            ->when($request->filled('q'), function ($x) use ($request) {
-                $kw = '%' . $request->q . '%';
+        ->when($request->filled('q'), function ($x) use ($request) {
+            $kw = '%' . $request->q . '%';
 
-                $x->where(function ($y) use ($kw) {
-                    $y->whereHas('user', function ($u) use ($kw) {
-                        $u->where('name', 'LIKE', $kw);
-                    })
-                    ->orWhereRaw('JSON_EXTRACT(specialty, "$.\\"en\\"") LIKE ?', [$kw])
-                    ->orWhereRaw('JSON_EXTRACT(specialty, "$.\\"ar\\"") LIKE ?', [$kw]);
-                });
-            })
+            $x->where(function ($y) use ($kw) {
+                $y->whereHas('user', function ($u) use ($kw) {
+                    $u->where('name', 'LIKE', $kw);
+                })
+                ->orWhereRaw('JSON_EXTRACT(specialty, "$.\\"en\\"") LIKE ?', [$kw])
+                ->orWhereRaw('JSON_EXTRACT(specialty, "$.\\"ar\\"") LIKE ?', [$kw]);
+            });
+        })
 
+        ->when($request->filled('specialty'), function ($x) use ($request) {
+            $kw = '%' . $request->specialty . '%';
+            $x->where(function ($y) use ($kw) {
+                $y->whereRaw('JSON_EXTRACT(specialty, "$.\\"en\\"") LIKE ?', [$kw])
+                ->orWhereRaw('JSON_EXTRACT(specialty, "$.\\"ar\\"") LIKE ?', [$kw]);
+            });
+        })
 
-            ->when($request->filled('specialty'), function ($x) use ($request) {
-                $kw = '%' . $request->specialty . '%';
-                $x->where(function ($y) use ($kw) {
-                    $y->whereRaw('JSON_EXTRACT(specialty, "$.\\"en\\"") LIKE ?', [$kw])
-                      ->orWhereRaw('JSON_EXTRACT(specialty, "$.\\"ar\\"") LIKE ?', [$kw]);
-                });
-            })
-            ->leftJoin('single_session_offers as sso', function ($join) {
-                $join->on('sso.therapist_id', '=', 'therapists.id')
-                    ->where('sso.is_active', true);
-            })
-            ->select('therapists.*')
+        ->leftJoin('single_session_offers as sso', function ($join) {
+            $join->on('sso.therapist_id', '=', 'therapists.id')
+                ->where('sso.is_active', true);
+        })
+        ->select('therapists.*')
 
+        ->when($request->filled('price_min'), fn ($x) =>
+            $x->where('sso.price_cents', '>=', (int) $request->price_min)
+        )
+        ->when($request->filled('price_max'), fn ($x) =>
+            $x->where('sso.price_cents', '<=', (int) $request->price_max)
+        )
 
-          ->when($request->filled('price_min'), fn ($x) =>
-                $x->where('sso.price_cents', '>=', (int) $request->price_min)
-            )
-            ->when($request->filled('price_max'), fn ($x) =>
-                $x->where('sso.price_cents', '<=', (int) $request->price_max)
-            )
-            ->orderBy('sso.price_cents')
+        ->when($request->filled('rating_min'), fn ($x) =>
+            $x->where('therapists.rating_avg', '>=', (float) $request->rating_min)
+        )
 
+        ->orderByDesc('therapists.rating_avg')
+        ->orderBy('sso.price_cents');
 
-            ->when($request->filled('rating_min'), fn ($x) =>
-                $x->where('rating_avg', '>=', (float) $request->rating_min)
-            )
-
-            ->orderByDesc('rating_avg')
-            ->orderBy('price_cents');
 
         $paginated = $q->paginate(20);
 
