@@ -4,6 +4,8 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Log;
+
 
 class NotificationResource extends JsonResource
 {
@@ -16,11 +18,19 @@ class NotificationResource extends JsonResource
             ?? $request->user()?->preferred_locale
             ?? 'en';
 
+
         $locale = in_array($locale, ['en', 'ar']) ? $locale : 'en';
         app()->setLocale($locale);
+        Log::info('NOTIF_DB_CREATED', [
+                    'data' => $data
 
+                ]);
         [$title, $body] = $this->resolveText($data, $locale);
+        Log::info('NOTIF_DB_CREATED', [
+                    'notification_id' => $title->id,
+                    'user_id' => $body,
 
+                ]);
         return [
             'id'         => $this->id,
             'type'       => $this->type,
@@ -41,7 +51,6 @@ class NotificationResource extends JsonResource
         switch ($this->type) {
             case 'session_upcoming':
                 return [
-                    __('notifications.session_upcoming.title'),
                     __('notifications.session_upcoming.body', [
                         'doctor' => $data['doctor_name'] ?? $data['doctor'] ?? '',
                         'time'   => isset($data['session_start_at'])

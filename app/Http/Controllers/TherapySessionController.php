@@ -284,7 +284,7 @@ class TherapySessionController extends Controller
 
         app(NotificationService::class)->sendToUser(
             $session->user_id,
-            'session upcoming',
+            'session_upcoming',
             [
                 'doctor' => $session->therapist->user->name,
                 'time'   => $session->scheduled_at->format('g:i A'),
