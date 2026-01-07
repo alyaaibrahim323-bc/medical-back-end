@@ -49,68 +49,74 @@ class PaymentsController extends Controller
     if ($data['purpose'] === Payment::PURPOSE_SINGLE_SESSION) {
 
         $session = TherapySession::with('therapist')
-            ->where('user_id', $user->id)
-            ->findOrFail($data['id']);
+        ->where('user_id', $user->id)
+        ->findOrFail($data['id']);
 
-        if (($session->status ?? null) !== 'pending_payment') {
-            return response()->json(['message' => 'Session not payable'], 422);
-        }
+    if (($session->status ?? null) !== 'pending_payment') {
+        return response()->json(['message' => 'Session not payable'], 422);
+    }
 
-        // ✅ IMPORTANT: keep relations
-        $therapistId = $session->therapist_id;
-        $therapySessionId = $session->id;
+    // الربط
+    $therapistId = $session->therapist_id;
+    $therapySessionId = $session->id;
 
-        $sessionFee = (int) ($session->therapist->price_cents ?? 0);
+    // ✅ لازم offer يكون موجود
+    $offer = SingleSessionOffer::query()
+        ->where('therapist_id', $session->therapist_id)
+        ->where('is_active', true)
+        ->orderByDesc('id')
+        ->first();
 
-        // ✅ get active offer for this therapist (single-session offer)
-        $offer = SingleSessionOffer::query()
-            ->where('therapist_id', $session->therapist_id)
-            ->where('is_active', true)
-            ->orderByDesc('id')
-            ->first();
+    if (!$offer) {
+        return response()->json([
+            'message' => 'No active offer for this therapist'
+        ], 422);
+    }
 
-        $offerPriceCents = (int) ($offer->price_cents ?? 0);
-        $discountPercent = (float) ($offer->discount_percent ?? 0);
-        $discountPercent = max(0, min(100, $discountPercent)); // safety
+    // ✅ السعر الأساسي من offer (قبل الخصم)
+    $baseFee = (int) $offer->price_cents;
 
-        // ✅ pricing rule:
-        // if offer has fixed price -> use it as net session fee
-        // else use percent discount on therapist price
-        if ($offer && $offerPriceCents > 0) {
-            $netSessionFee = $offerPriceCents;
-            $discountCents = max(0, $sessionFee - $netSessionFee);
-        } else {
-            $discountCents = (int) round($sessionFee * $discountPercent / 100);
-            $netSessionFee = max(0, $sessionFee - $discountCents);
-        }
+    // ✅ نسبة الخصم
+    $discountPercent = (float) ($offer->discount_percent ?? 0);
+    $discountPercent = max(0, min(100, $discountPercent));
 
-        $serviceFee = (int) config('fees.single_session_service_cents', 0);
-        $amountCents = $netSessionFee + $serviceFee;
+    // ✅ الخصم = فلوس
+    $discountCents = (int) round($baseFee * $discountPercent / 100);
 
-        $summary = [
-            'base_fee_cents' => $sessionFee,
-            'service_fee_cents' => $serviceFee,
-            'discount_cents' => $discountCents,
-            'total_cents' => $amountCents,
-            'discount_percent' => $discountPercent,
-        ];
+    // ✅ السعر بعد الخصم
+    $netSessionFee = max(0, $baseFee - $discountCents);
 
-        $payload = [
-            'type' => 'single_session',
-            'session_id' => $session->id,
-            'therapist_id' => $session->therapist_id,
+    // Service fee
+    $serviceFee = (int) config('fees.single_session_service_cents', 0);
 
-            'session_fee_cents' => $sessionFee,
-            'discount_percent' => $discountPercent,
-            'discount_cents' => $discountCents,
-            'net_session_fee_cents' => $netSessionFee,
+    // ✅ ده اللي هيتدفع فعليًا
+    $amountCents = $netSessionFee + $serviceFee;
 
-            'service_fee_cents' => $serviceFee,
-            'offer_id' => $offer?->id,
-            'offer_price_cents' => $offerPriceCents,
+    // ✅ Summary (فلوس فقط — زي ما إنتِ عايزة)
+    $summary = [
+        'base_fee_cents' => $baseFee,
+        'service_fee_cents' => $serviceFee,
+        'discount_amount_cents' => $discountCents,
+        'total_cents' => $amountCents,
+    ];
 
-            'summary' => $summary,
-        ];
+    // Payload للتخزين
+    $payload = [
+        'type' => 'single_session',
+        'session_id' => $session->id,
+        'therapist_id' => $session->therapist_id,
+
+        'base_fee_cents' => $baseFee,
+        'discount_percent' => $discountPercent,
+        'discount_amount_cents' => $discountCents,
+        'net_session_fee_cents' => $netSessionFee,
+
+        'service_fee_cents' => $serviceFee,
+        'offer_id' => $offer->id,
+
+        'summary' => $summary,
+    ];
+
 
     } else {
 
