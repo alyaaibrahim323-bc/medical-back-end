@@ -125,7 +125,6 @@ class PaymentsController extends Controller
 
         $hasActiveNotFinished = UserPackage::query()
             ->where('user_id', $user->id)
-            ->where('therapist_id', $therapistId) // لو عايزاها عامة شيلي السطر ده
             ->where('status', 'active')
             ->whereColumn('sessions_used', '<', 'sessions_total')
             ->where(function ($q) {

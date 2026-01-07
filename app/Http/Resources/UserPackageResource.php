@@ -23,6 +23,7 @@ class UserPackageResource extends JsonResource
             0,
             ($this->sessions_total ?? 0) - ($this->sessions_used ?? 0)
         );
+        $lastPayment = $this->whenLoaded('lastPaidPayment') ? $this->lastPaidPayment : null;
 
         return [
             'id' => $this->id,
@@ -45,14 +46,13 @@ class UserPackageResource extends JsonResource
                 'can_renew'          => (bool) $this->can_renew,
 
                 // 🆕 السعر (من جدول الباكدج أو من user_package حسب ما عندك)
-                'price_cents' => $this->package->price_cents ?? $this->price_cents ?? null,
-                'price'       => isset($this->package->price_cents)
-                    ? $this->package->price_cents / 100
-                    : (isset($this->price_cents) ? $this->price_cents / 100 : null),
-                'currency'    => $this->package->currency
-                    ?? $this->currency
+                 'price_cents'        => $this->package->price_cents ?? null,           // السعر الأساسي
+                'discount_percent'   => $this->package->discount_percent ?? null,      // لو موجود في package
+                'payable_cents'      => $lastPayment?->amount_cents ?? null,           // اللي اتدفع فعلاً
+                'currency'           => $lastPayment?->currency
+                    ?? $this->package->currency
                     ?? 'EGP',
-            ],
+                    ],
 
             'therapist' => $this->therapist ? [
                 'id'     => $this->therapist->id,
@@ -63,10 +63,14 @@ class UserPackageResource extends JsonResource
             ] : null,
 
             // 🆕 بلوك بسيط للدفع: طريقة الدفع + ممكن تزودي فيه حاجات تانية
-            'payment' => [
-                'method'         => $this->payment_method,   // مثال: card / wallet / cash
-                'last_paid_at' => $this->paid_at ?? null,          // لو عندك عمود زى كدا
-            ],
+             'payment' => [
+            'method'            => $lastPayment?->method
+                ?? data_get($lastPayment?->payload, 'kashier_webhook.data.method'),
+            'provider'          => $lastPayment?->provider,
+            'status'            => $lastPayment?->status,
+            'paid_at'           => $lastPayment?->paid_at,
+            'transaction_id'    => $lastPayment?->provider_transaction_id,
+    ],
 
             'status'       => $this->status,        // active/expired/cancelled
             'purchased_at' => $this->purchased_at,

@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Password;
 
 class AuthController extends Controller
 {
-   
+
 
     public function register(Request $r)
     {
@@ -50,7 +50,7 @@ class AuthController extends Controller
         ], 201);
     }
 
-  
+
 
     public function login(Request $r)
     {
@@ -66,11 +66,29 @@ class AuthController extends Controller
         }
 
         if (!$user->email_verified_at) {
-            return response()->json([
-                'message'=>'Email not verified',
-                'code'=>'email_not_verified'
-            ],403);
-        }
+
+    $otp = $this->generateOtp($user, 'email_verify');
+
+    // لو مش throttled ابعت ايميل
+    if (!($otp['throttled'] ?? false)) {
+        Mail::to($user->email)->send(
+            new OtpMail($user, $otp['code'], $otp['expires'])
+        );
+    }
+
+    return response()->json([
+        'message' => ($otp['throttled'] ?? false)
+            ? 'Email not verified. OTP already sent recently.'
+            : 'Email not verified. OTP sent.',
+        'code'   => 'email_not_verified',
+        'action' => 'verify_email',
+        'data'   => [
+            'email' => $user->email,
+            'expires_in_minutes' => $otp['expires'],
+        ],
+    ], 403);
+}
+
 
         Auth::login($user);
 
@@ -201,26 +219,45 @@ class AuthController extends Controller
 
 
     private function generateOtp(User $user,string $purpose): array
-    {
-        $otp = str_pad(random_int(0,9999),4,'0',STR_PAD_LEFT);
-        $expires = (int) config('auth.otp_expires',10);
+{
+    $expires = (int) config('auth.otp_expires', 10);
 
-        EmailOtp::updateOrCreate(
-            [
-                'user_id'=>$user->id,
-                'purpose'=>$purpose,
-            ],
-            [
-                'code_hash'=>Hash::make($otp),
-                'attempts'=>0,
-                'expires_at'=>now()->addMinutes($expires),
-                'last_sent_at'=>now(),
-                'consumed_at'=>null,
-            ]
-        );
+    // ✅ Throttle: امنع ارسال OTP أكتر من مرة خلال 60 ثانية
+    $existing = EmailOtp::where('user_id', $user->id)
+        ->where('purpose', $purpose)
+        ->first();
 
-        return ['code'=>$otp,'expires'=>$expires];
+    if (
+        $existing &&
+        $existing->last_sent_at &&
+        now()->diffInSeconds($existing->last_sent_at) < 60
+    ) {
+        return [
+            'code' => null,
+            'expires' => $expires,
+            'throttled' => true,
+        ];
     }
+
+    $otp = str_pad(random_int(0,9999), 4, '0', STR_PAD_LEFT);
+
+    EmailOtp::updateOrCreate(
+        [
+            'user_id' => $user->id,
+            'purpose' => $purpose,
+        ],
+        [
+            'code_hash' => Hash::make($otp),
+            'attempts' => 0,
+            'expires_at' => now()->addMinutes($expires),
+            'last_sent_at' => now(),
+            'consumed_at' => null,
+        ]
+    );
+
+    return ['code' => $otp, 'expires' => $expires, 'throttled' => false];
+}
+
 
     private function verifyOtp(
         Request $r,
@@ -299,7 +336,7 @@ class AuthController extends Controller
         'data' => [
             'email' => $user->email,
             'token' => $token,
-         
+
         ]
     ]);
 }

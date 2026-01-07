@@ -16,7 +16,7 @@ class TherapistController extends Controller
 
     public function index(Request $request)
     {
-        $q = Therapist::with('user')
+        $q = Therapist::with(['user', 'activeSingleSessionOffer'])
             ->where('is_active', true)
 
             ->when($request->filled('q'), function ($x) use ($request) {
@@ -39,13 +39,21 @@ class TherapistController extends Controller
                       ->orWhereRaw('JSON_EXTRACT(specialty, "$.\\"ar\\"") LIKE ?', [$kw]);
                 });
             })
+            ->leftJoin('single_session_offers as sso', function ($join) {
+                $join->on('sso.therapist_id', '=', 'therapists.id')
+                    ->where('sso.is_active', true);
+            })
+            ->select('therapists.*')
 
-            ->when($request->filled('price_min'), fn ($x) =>
-                $x->where('price_cents', '>=', (int) $request->price_min)
+
+          ->when($request->filled('price_min'), fn ($x) =>
+                $x->where('sso.price_cents', '>=', (int) $request->price_min)
             )
             ->when($request->filled('price_max'), fn ($x) =>
-                $x->where('price_cents', '<=', (int) $request->price_max)
+                $x->where('sso.price_cents', '<=', (int) $request->price_max)
             )
+            ->orderBy('sso.price_cents')
+
 
             ->when($request->filled('rating_min'), fn ($x) =>
                 $x->where('rating_avg', '>=', (float) $request->rating_min)
@@ -70,8 +78,9 @@ class TherapistController extends Controller
 
                     'specialty'        => $t->specialtyText,
                     'bio'              => $t->bioText,
-                    'price_cents'      => $t->price_cents,
-                    'currency'         => $t->currency,
+                   'price_cents' => $t->activeSingleSessionOffer?->price_cents ?? $t->price_cents,
+                    'currency'    => $t->activeSingleSessionOffer?->currency ?? $t->currency,
+
                     'rating_avg'       => $t->rating_avg,
                     'rating_count'     => $t->rating_count,
                     'years_experience' => $t->years_experience,

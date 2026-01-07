@@ -15,7 +15,7 @@ class Therapist extends Model
     ];
 
     protected $casts = [
-        'specialty'      => 'array',  
+        'specialty'      => 'array',
         'bio'            => 'array',
         'is_active'      => 'boolean',
         'rating_avg'     => 'float',
@@ -73,6 +73,14 @@ class Therapist extends Model
 {
     return $this->hasMany(\App\Models\TherapistChatAvailability::class);
 }
+
+public function activeSingleSessionOffer()
+{
+    return $this->hasOne(SingleSessionOffer::class)
+        ->where('is_active', true)
+        ->latestOfMany();
+}
+
 
 }
 

@@ -32,7 +32,6 @@ class TherapySessionController extends Controller
         if ($scope === 'upcoming') {
             $q->where('scheduled_at', '>=', now())
                 ->whereIn('status', [
-                    TherapySession::STATUS_PENDING,
                     TherapySession::STATUS_CONFIRMED,
                 ]);
         } elseif ($scope === 'past') {

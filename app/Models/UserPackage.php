@@ -25,7 +25,12 @@ class UserPackage extends Model
 {
     return $this->hasMany(Payment::class);
 }
-
+ public function lastPaidPayment()
+{
+    return $this->hasOne(\App\Models\Payment::class, 'user_package_id')
+        ->where('status', \App\Models\Payment::STATUS_PAID)
+        ->latestOfMany();
+}
 
     public function getCanRenewAttribute(): bool
     {
