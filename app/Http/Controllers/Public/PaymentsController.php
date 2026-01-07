@@ -340,36 +340,77 @@ class PaymentsController extends Controller
     }
 
     protected function applyBusinessLogicAfterPaid(Payment $payment): void
-    {
-        if ($payment->purpose === Payment::PURPOSE_SINGLE_SESSION && $payment->therapy_session_id) {
-            $session = TherapySession::find($payment->therapy_session_id);
-            if ($session && ($session->status ?? null) !== 'confirmed') {
-                $session->update(['status' => 'confirmed']);
-            }
-            return;
+{
+    // ✅ Single session paid -> confirm session + notify
+    if ($payment->purpose === Payment::PURPOSE_SINGLE_SESSION && $payment->therapy_session_id) {
+
+        $session = TherapySession::with('therapist.user')->find($payment->therapy_session_id);
+
+        if ($session && ($session->status ?? null) !== TherapySession::STATUS_CONFIRMED) {
+            $session->update(['status' => TherapySession::STATUS_CONFIRMED]);
         }
 
-        if ($payment->purpose === Payment::PURPOSE_PACKAGE) {
-            if ($payment->user_package_id) return;
+        app(\App\Services\NotificationService::class)->sendToUser(
+            $payment->user_id,
+            'payment_success_session',
+            [
+                'title' => 'تم الدفع بنجاح',
+                'message' => 'تم تأكيد حجز الجلسة بنجاح.',
+                'session_id'   => $session?->id,
+                'doctor'       => optional($session?->therapist?->user)->name,
+                'scheduled_at' => optional($session?->scheduled_at)?->toISOString(),
+                'amount_cents' => $payment->amount_cents,
+                'currency'     => $payment->currency,
+                'method'       => data_get($payment->payload, 'kashier_webhook.data.method'),
+            ]
+        );
 
-            $packageId = $payment->payload['package_id'] ?? null;
-            if (!$packageId) return;
-
-            $package = Package::find($packageId);
-            if (!$package) return;
-
-            $userPackage = UserPackage::create([
-                'user_id' => $payment->user_id,
-                'package_id' => $package->id,
-                'therapist_id' => $payment->therapist_id,
-                'sessions_total' => $package->sessions_count,
-                'sessions_used' => 0,
-                'status' => 'active',
-                'purchased_at' => now(),
-                'expires_at' => $package->validity_days ? now()->addDays($package->validity_days) : null,
-            ]);
-
-            $payment->update(['user_package_id' => $userPackage->id]);
-        }
+        return;
     }
+
+    // ✅ Package paid -> create user package + notify
+    if ($payment->purpose === Payment::PURPOSE_PACKAGE) {
+
+        // already processed
+        if ($payment->user_package_id) return;
+
+        $packageId = data_get($payment->payload, 'package_id');
+        if (!$packageId) return;
+
+        $package = Package::find($packageId);
+        if (!$package) return;
+
+        $userPackage = UserPackage::create([
+            'user_id'        => $payment->user_id,
+            'package_id'     => $package->id,
+            'therapist_id'   => $payment->therapist_id,
+            'sessions_total' => $package->sessions_count,
+            'sessions_used'  => 0,
+            'status'         => 'active',
+            'purchased_at'   => now(),
+            'expires_at'     => $package->validity_days ? now()->addDays($package->validity_days) : null,
+        ]);
+
+        $payment->update(['user_package_id' => $userPackage->id]);
+
+        app(\App\Services\NotificationService::class)->sendToUser(
+            $payment->user_id,
+            'payment_success_package',
+            [
+                'title' => 'تم الدفع بنجاح',
+                'message' => 'تم تفعيل الباكدج بنجاح.',
+                'user_package_id' => $userPackage->id,
+                'package_id'      => $package->id,
+                'sessions_total'  => $userPackage->sessions_total,
+                'expires_at'      => optional($userPackage->expires_at)?->toISOString(),
+                'amount_cents'    => $payment->amount_cents,
+                'currency'        => $payment->currency,
+                'method'          => data_get($payment->payload, 'kashier_webhook.data.method'),
+            ]
+        );
+
+        return;
+    }
+}
+
 }
