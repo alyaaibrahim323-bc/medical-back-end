@@ -272,7 +272,7 @@ class TherapySessionController extends Controller
             $userPackage->sessions_used += 1;
 
             if ($userPackage->sessions_used >= $userPackage->sessions_total) {
-                $userPackage->status = 'completed';
+                $userPackage->status = 'active';
             }
 
             $userPackage->save();
