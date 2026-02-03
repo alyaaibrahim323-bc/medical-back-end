@@ -21,6 +21,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'throttle:api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \App\Http\Middleware\EnsureUserGeo::class,
+            \App\Http\Middleware\TrustProxies::class,
+
         ]);
         $middleware->appendToGroup('api', SetLocaleFromRequest::class);
 
