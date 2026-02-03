@@ -6,11 +6,15 @@ use App\Models\User;
 use App\Models\EmailOtp;
 use App\Models\RefreshToken;
 use App\Mail\OtpMail;
+use App\Services\GeoIpService;
+use App\Services\GeoPricingService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rules\Password as Pw;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
+
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Password;
 
@@ -90,6 +94,34 @@ class AuthController extends Controller
 
             ], 403);
         }
+
+        try {
+            $geo = app(GeoIpService::class);
+
+            $ip = $geo->clientIp($r);
+            $country = $geo->detectCountryFromIp($ip); // EG / US / null
+            $map = $geo->regionAndCurrency($country);
+
+            $shouldUpdate =
+                !$user->pricing_region ||
+                !$user->geo_detected_at ||
+                $user->geo_detected_at->lt(now()->subDays(7));
+
+            // ✅ مهم: لو country null ما نكتبش null في DB
+            if ($shouldUpdate && $country) {
+                $user->forceFill([
+                    'country_code'    => $country,
+                    'pricing_region'  => $map['region'], // EG_LOCAL / INTL
+                    'geo_detected_at' => now(),
+                ])->save();
+            }
+        } catch (\Throwable $e) {
+            Log::warning('GEOIP_LOGIN_FAILED', [
+                'user_id' => $user->id,
+                'error'   => $e->getMessage(),
+            ]);
+        }
+
 
 
         Auth::login($user);

@@ -11,7 +11,7 @@ class Payment extends Model
         'purpose','amount_cents','currency',
         'provider','provider_order_id','provider_transaction_id','provider_payment_id',
         'status','paid_at','failed_at','refunded_at',
-        'payload','reference',
+        'payload','reference','country_code','pricing_region','client_ip'
     ];
 
     protected $casts = [
