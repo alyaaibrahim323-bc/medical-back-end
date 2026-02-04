@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use Illuminate\Http\Request;
+use GeoIp2\Database\Reader;
+
 
 class GeoIpService
 {
@@ -22,23 +24,21 @@ class GeoIpService
     }
 
     public function detectCountryFromIp(?string $ip): ?string
-    {
-        // ✅ override للتست لوكال
-        $forced = strtoupper((string) env('PRICING_FORCE_COUNTRY', ''));
-        if (strlen($forced) === 2) return $forced;
+{
+    $forced = strtoupper((string) env('PRICING_FORCE_COUNTRY', ''));
+    if (strlen($forced) === 2) return $forced;
 
-        if (!$ip || in_array($ip, ['127.0.0.1', '::1'], true)) {
-            return null;
-        }
+    if (!$ip || in_array($ip, ['127.0.0.1', '::1'], true)) return null;
 
-        try {
-            $loc = geoip($ip);
-            $cc  = strtoupper((string) ($loc->iso_code ?? ''));
-            return strlen($cc) === 2 ? $cc : null;
-        } catch (\Throwable $e) {
-            return null;
-        }
+    try {
+        $path = storage_path('app/geoip/GeoLite2-Country.mmdb');
+        $reader = new Reader($path);
+        $cc = strtoupper((string) $reader->country($ip)->country->isoCode);
+        return strlen($cc) === 2 ? $cc : null;
+    } catch (\Throwable $e) {
+        return null;
     }
+}
 
     public function regionAndCurrency(?string $countryCode): array
     {

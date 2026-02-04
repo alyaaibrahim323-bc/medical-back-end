@@ -49,15 +49,11 @@ return [
 
     'services' => [
 
-        'maxmind_database' => [
-            'class' => \Torann\GeoIP\Services\MaxMindDatabase::class,
-            'database_path' => storage_path('app/geoip/GeoLite2-Country.mmdb'),
-            'update_url' => sprintf(
-            'https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=%s&suffix=tar.gz',
-            env('MAXMIND_LICENSE_KEY')
-            ),
-            'locales' => ['en'],
-        ],
+       'maxmind_database' => [
+        'class' => \Torann\GeoIP\Services\MaxMindDatabase::class,
+        'database_path' => storage_path('app/geoip/GeoLite2-Country.mmdb'),
+        'locales' => ['en'],
+    ],
 
         'maxmind_api' => [
             'class' => \Torann\GeoIP\Services\MaxMindWebService::class,
