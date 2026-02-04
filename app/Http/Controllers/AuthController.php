@@ -99,6 +99,7 @@ class AuthController extends Controller
             $geo = app(GeoIpService::class);
 
             $ip = $geo->clientIp($r);
+            print($ip);
             Log::info('GEO_STEP', ['step' => 'ip', 'ip' => $ip]);
 
             $country = $geo->detectCountryFromIp($ip);
