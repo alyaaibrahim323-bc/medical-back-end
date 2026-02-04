@@ -99,8 +99,14 @@ class AuthController extends Controller
             $geo = app(GeoIpService::class);
 
             $ip = $geo->clientIp($r);
-            $country = $geo->detectCountryFromIp($ip); // EG / US / null
+            Log::info('GEO_STEP', ['step' => 'ip', 'ip' => $ip]);
+
+            $country = $geo->detectCountryFromIp($ip);
+            Log::info('GEO_STEP', ['step' => 'country', 'country' => $country]);
+
             $map = $geo->regionAndCurrency($country);
+            Log::info('GEO_STEP', ['step' => 'map', 'map' => $map]);
+
 
             $shouldUpdate =
                 !$user->pricing_region ||
@@ -126,9 +132,12 @@ class AuthController extends Controller
 
         Auth::login($user);
 
+        $user->refresh();
+
         return response()->json([
-            'data' => $this->issueTokens($user)
+        'data' => $this->issueTokens($user)
         ]);
+
     }
 
     /* =========================================================
