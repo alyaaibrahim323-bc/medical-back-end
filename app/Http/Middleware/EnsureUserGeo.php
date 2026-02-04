@@ -11,6 +11,13 @@ class EnsureUserGeo
 {
     public function handle(Request $request, Closure $next)
     {
+         Log::info('GEO_DEBUG', [
+        'laravel_ip' => $request->ip(),
+        'cf_ip'      => $request->header('CF-Connecting-IP'),
+        'xff'        => $request->header('X-Forwarded-For'),
+        'remote'     => $request->server('REMOTE_ADDR'),
+        'user_agent' => $request->userAgent(),
+    ]);
         $user = $request->user();
         if (!$user) return $next($request);
 
