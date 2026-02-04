@@ -102,6 +102,17 @@ class AuthController extends Controller
             print($ip);
             Log::info('GEO_STEP', ['step' => 'ip', 'ip' => $ip]);
 
+            $geo = app(\App\Services\GeoIpService::class);
+$ip = $geo->clientIp($r);
+
+Log::info('GEO_DEBUG', [
+  'ip' => $ip,
+  'r_ip' => $r->ip(),
+  'xff' => $r->header('X-Forwarded-For'),
+  'cf'  => $r->header('CF-Connecting-IP'),
+]);
+
+
             $country = $geo->detectCountryFromIp($ip);
             Log::info('GEO_STEP', ['step' => 'country', 'country' => $country]);
 
