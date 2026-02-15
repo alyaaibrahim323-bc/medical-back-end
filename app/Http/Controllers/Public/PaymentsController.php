@@ -73,26 +73,30 @@ class PaymentsController extends Controller
         ], 422);
     }
 
-    // ✅ السعر الأساسي من offer (قبل الخصم)
-    $baseFee = (int) $offer->price_cents;
+    $region  = strtoupper((string) ($user->pricing_region ?? ''));
+    $isLocal = ($region === 'EG_LOCAL');
 
-    // ✅ نسبة الخصم
+    $baseFee = $isLocal
+        ? (int) ($offer->price_cents_egp ?? 0)
+        : (int) ($offer->price_cents_usd ?? 0);
+
+    if ($baseFee <= 0) {
+        $baseFee = (int) ($offer->price_cents ?? 0);
+    }
+
+    $currency = $isLocal ? 'EGP' : 'USD';
+
     $discountPercent = (float) ($offer->discount_percent ?? 0);
     $discountPercent = max(0, min(100, $discountPercent));
 
-    // ✅ الخصم = فلوس
     $discountCents = (int) round($baseFee * $discountPercent / 100);
 
-    // ✅ السعر بعد الخصم
     $netSessionFee = max(0, $baseFee - $discountCents);
 
-    // Service fee
     $serviceFee = (int) config('fees.single_session_service_cents', 0);
 
-    // ✅ ده اللي هيتدفع فعليًا
     $amountCents = $netSessionFee + $serviceFee;
 
-    // ✅ Summary (فلوس فقط — زي ما إنتِ عايزة)
     $summary = [
         'base_fee_cents' => $baseFee,
         'service_fee_cents' => $serviceFee,
@@ -100,7 +104,6 @@ class PaymentsController extends Controller
         'total_cents' => $amountCents,
     ];
 
-    // Payload للتخزين
     $payload = [
         'type' => 'single_session',
         'session_id' => $session->id,
@@ -184,7 +187,7 @@ class PaymentsController extends Controller
             'user_package_id' => $userPackageId,
             'purpose' => $data['purpose'],
             'amount_cents' => $amountCents,
-            'currency' => 'EGP',
+            'currency' => $currency,
             'provider' => 'kashier',
             'status' => Payment::STATUS_PENDING,
             'reference' => $reference,
@@ -194,7 +197,7 @@ class PaymentsController extends Controller
 
     $merchantId = $kashier->merchantId();
     $apiKey     = $kashier->apiKey();
-    $currency   = $kashier->currency();
+    $currency   = $currency ?? $kashier->currency();
     $order      = $payment->reference;
 
     $hash = $kashier->makeHash($merchantId, $order, $amount, $currency);

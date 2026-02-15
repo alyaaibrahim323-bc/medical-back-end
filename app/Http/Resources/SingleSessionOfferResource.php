@@ -6,26 +6,51 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class SingleSessionOfferResource extends JsonResource
 {
-    public function toArray($request)
-    {
-        $final = (int) round($this->price_cents * (100 - $this->discount_percent) / 100);
+   public function toArray($request)
+{
+    $discountPercent = (float) ($this->discount_percent ?? 0);
 
-        return [
-            'enabled'              => (bool)$this->is_active,
-            'title'                => 'Single Session',
-            'price_cents'          => $this->price_cents,
-            'currency'             => $this->currency,
-            'discount_percent'     => (float)$this->discount_percent,
-            'final_price_cents'    => $final,
-            'session_duration_min' => $this->duration_min,
-            'display' => [
-                'badge'          => 'Single Session',
-                'price_label'    => ($this->price_cents/100).' '.$this->currency,
-                'discount_label' => $this->discount_percent > 0 ? (intval($this->discount_percent).'% Off') : null,
-                'duration_label' => $this->duration_min.' m Session Duration',
-                'sessions_label' => '1 Session',
-                'cta'            => 'Start Booking'
-            ]
-        ];
+    $region  = strtoupper((string) optional($request->user())->pricing_region);
+    $isLocal = ($region === 'EG_LOCAL');
+
+    // ✅ السعر الحقيقي المعروض
+    $basePriceCents = $isLocal
+        ? (int) ($this->price_cents_egp ?? 0)
+        : (int) ($this->price_cents_usd ?? 0);
+
+    // ✅ fallback لو السعر المتخصص = 0 (احتياطي)
+    if ($basePriceCents <= 0) {
+        $basePriceCents = (int) ($this->price_cents ?? 0);
     }
+
+    $currency = $isLocal ? 'EGP' : 'USD';
+
+    $final = (int) round($basePriceCents * (100 - $discountPercent) / 100);
+
+    return [
+        'enabled'              => (bool)$this->is_active,
+        'title'                => 'Single Session',
+
+        'price_cents'          => $basePriceCents,
+        'currency'             => $currency,
+
+        'discount_percent'     => $discountPercent,
+        'final_price_cents'    => $final,
+        'session_duration_min' => (int)$this->duration_min,
+
+        // لو محتاجاهم للعرض في داشبورد الدكتور أو debug
+        'price_cents_egp'      => (int)$this->price_cents_egp,
+        'price_cents_usd'      => (int)$this->price_cents_usd,
+
+        'display' => [
+            'badge'          => 'Single Session',
+            'price_label'    => number_format($basePriceCents / 100, 2) . ' ' . $currency,
+            'discount_label' => $discountPercent > 0 ? (intval($discountPercent) . '% Off') : null,
+            'duration_label' => ((int)$this->duration_min) . ' m Session Duration',
+            'sessions_label' => '1 Session',
+            'cta'            => 'Start Booking',
+        ],
+    ];
+}
+
 }
