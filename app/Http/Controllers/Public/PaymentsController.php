@@ -147,7 +147,9 @@ class PaymentsController extends Controller
     $isLocal = ($region === 'EG_LOCAL');
 
     // ✅ baseFee (قبل الخصم)
-    $baseFee = (int) $package->price_cents;
+      $baseFee = $isLocal
+        ? (int) ($offer->price_cents_egp ?? 0)
+        : (int) ($offer->price_cents_usd ?? 0);
 
     // ✅ currency
     $currency = strtoupper((string) ($package->currency ?: $kashier->currency()));
