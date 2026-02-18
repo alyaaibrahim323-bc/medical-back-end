@@ -247,34 +247,52 @@ class TherapistController extends Controller
     // Therapist packages (region-based price)
     // =========================
     public function packages(Request $r, $id)
-    {
-        $isEgypt  = $this->isEgypt($r);
-        $currency = $this->currencyFor($r);
-        $orderCol = $isEgypt ? 'price_cents_egp' : 'price_cents_usd';
+{
+    // ✅ اعتمدي على الـ saved pricing_region لو user logged-in
+    $region  = strtoupper((string) ($r->user()?->pricing_region ?? ''));
+    $isEgypt = ($region === 'EG_LOCAL');
 
-        $items = Package::where('is_active', true)
-            ->where('applicability', 'therapist')
-            ->where('created_by_therapist_id', $id)
-            ->orderBy($orderCol)
-            ->get()
-            ->map(function (Package $p) use ($isEgypt, $currency) {
-
-                $price = (int) ($isEgypt ? ($p->price_cents_egp ?? 0) : ($p->price_cents_usd ?? 0));
-                if ($price <= 0) $price = (int) ($p->price_cents ?? 0); // legacy fallback
-
-                return [
-                    'id'                   => $p->id,
-                    'name'                 => $p->name_localized,
-                    'sessions_count'       => $p->sessions_count,
-                    'session_duration_min' => $p->session_duration_min,
-                    'price_cents'          => $price,
-                    'currency'             => $currency,
-                    'discount_percent'     => $p->discount_percent,
-                ];
-            });
-
-        return response()->json(['data' => $items]);
+    // لو endpoint public ومفيش user -> ارجعي للـ IP logic بتاعك
+    if (!$r->user()) {
+        $isEgypt = $this->isEgypt($r);
     }
+
+    $currency = $isEgypt ? 'EGP' : 'USD';
+    $orderCol = $isEgypt ? 'price_cents_egp' : 'price_cents_usd';
+
+    $items = Package::where('is_active', true)
+        ->where('applicability', 'therapist')
+        ->where('created_by_therapist_id', $id)
+        ->orderBy($orderCol)
+        ->get()
+        ->map(function (Package $p) use ($isEgypt, $currency) {
+
+            $baseFee = (int) ($isEgypt ? ($p->price_cents_egp ?? 0) : ($p->price_cents_usd ?? 0));
+            if ($baseFee <= 0) $baseFee = (int) ($p->price_cents ?? 0); // legacy fallback
+
+            $discountPercent = (float) ($p->discount_percent ?? 0);
+            $discountPercent = max(0, min(100, $discountPercent));
+
+            $discountCents = (int) round($baseFee * $discountPercent / 100);
+            $finalFee = max(0, $baseFee - $discountCents);
+
+            return [
+                'id'                   => $p->id,
+                'name'                 => $p->name_localized,
+                'sessions_count'       => $p->sessions_count,
+                'session_duration_min' => $p->session_duration_min,
+
+                // ✅ consistent pricing fields
+                'price_cents'          => $baseFee,      // before discount
+                'final_price_cents'    => $finalFee,     // after discount
+                'discount_percent'     => $discountPercent,
+                'currency'             => $currency,
+            ];
+        });
+
+    return response()->json(['data' => $items]);
+}
+
 
     // =========================
     // Single session offer (region-based price)
