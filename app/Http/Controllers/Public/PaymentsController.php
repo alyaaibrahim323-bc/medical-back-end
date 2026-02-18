@@ -36,7 +36,7 @@ class PaymentsController extends Controller
 
     $amountCents = 0;
     $payload = [];
-    $currency = $kashier->currency();
+    $currency = strtoupper((string) $kashier->currency());
     // ✅ this will be returned to Flutter like the screenshot
     $summary = [
         'base_fee_cents' => 0,
@@ -54,8 +54,7 @@ class PaymentsController extends Controller
 
     if (($session->status ?? null) !== 'pending_payment') {
         return response()->json(['message' => 'Session not payable'], 422);
-        $currency = $isLocal ? 'EGP' : 'USD';
-    }
+د    }
 
     // الربط
     $therapistId = $session->therapist_id;
@@ -171,7 +170,7 @@ class PaymentsController extends Controller
 
             'summary' => $summary,
         ];
-        $currency = strtoupper((string) ($package->currency ?? $kashier->currency()));
+        $currency = strtoupper((string) ($package->currency ?: $kashier->currency()));
 
     }
 
