@@ -123,56 +123,74 @@ class PaymentsController extends Controller
 
     } else {
 
-        $package = Package::where('is_active', true)->findOrFail($data['id']);
-        $therapistId = $package->created_by_therapist_id;
+    $package = Package::where('is_active', true)->findOrFail($data['id']);
+    $therapistId = $package->created_by_therapist_id;
 
-        $hasActiveNotFinished = UserPackage::query()
-            ->where('user_id', $user->id)
-            ->where('status', 'active')
-            ->whereColumn('sessions_used', '<', 'sessions_total')
-            ->where(function ($q) {
-                $q->whereNull('expires_at')
-                  ->orWhere('expires_at', '>', now());
-            })
-            ->exists();
+    $hasActiveNotFinished = UserPackage::query()
+        ->where('user_id', $user->id)
+        ->where('status', 'active')
+        ->whereColumn('sessions_used', '<', 'sessions_total')
+        ->where(function ($q) {
+            $q->whereNull('expires_at')
+              ->orWhere('expires_at', '>', now());
+        })
+        ->exists();
 
-        if ($hasActiveNotFinished) {
-            return response()->json([
-                'message' => 'You already have an active package. Please finish it before purchasing another one.'
-            ], 422);
-        }
-
-        $basePrice = (int) $package->price_cents;
-        $discount  = (float) ($package->discount_percent ?? 0);
-
-        $payable   = (int) round($basePrice * (100 - $discount) / 100);
-
-        $serviceFee = (int) config('fees.package_service_cents', 0);
-        $amountCents = $payable + $serviceFee;
-
-        $discountCents = max(0, $basePrice - $payable);
-
-        $summary = [
-            'base_fee_cents' => $basePrice,
-            'service_fee_cents' => $serviceFee,
-            'discount_cents' => $discountCents,
-            'total_cents' => $amountCents,
-            'discount_percent' => $discount,
-        ];
-
-        $payload = [
-            'type' => 'package',
-            'package_id' => $package->id,
-            'base_price_cents' => $basePrice,
-            'discount_percent' => $discount,
-            'payable_cents' => $payable,
-            'service_fee_cents' => $serviceFee,
-
-            'summary' => $summary,
-        ];
-        $currency = strtoupper((string) ($package->currency ?: $kashier->currency()));
-
+    if ($hasActiveNotFinished) {
+        return response()->json([
+            'message' => 'You already have an active package. Please finish it before purchasing another one.'
+        ], 422);
     }
+
+    // ✅ زي single session: region based currency (لو باكدج عملتها ثابتة سيبيها بس)
+    $region  = strtoupper((string) ($user->pricing_region ?? ''));
+    $isLocal = ($region === 'EG_LOCAL');
+
+    // ✅ baseFee (قبل الخصم)
+    $baseFee = (int) $package->price_cents;
+
+    // ✅ currency
+    $currency = strtoupper((string) ($package->currency ?: $kashier->currency()));
+
+    // ✅ discount percent
+    $discountPercent = (float) ($package->discount_percent ?? 0);
+    $discountPercent = max(0, min(100, $discountPercent));
+
+    // ✅ discount amount
+    $discountCents = (int) round($baseFee * $discountPercent / 100);
+
+    // ✅ net price after discount
+    $netFee = max(0, $baseFee - $discountCents);
+
+    // ✅ service fee
+    $serviceFee = (int) config('fees.package_service_cents', 0);
+
+    // ✅ total payable
+    $amountCents = $netFee + $serviceFee;
+
+    // ✅ summary (نفس single session style)
+    $summary = [
+        'base_fee_cents'        => $baseFee,
+        'service_fee_cents'     => $serviceFee,
+        'discount_amount_cents' => $discountCents,
+        'total_cents'           => $amountCents,
+        'discount_percent'      => $discountPercent,
+    ];
+
+    $payload = [
+        'type'                 => 'package',
+        'package_id'           => $package->id,
+
+        'base_fee_cents'       => $baseFee,
+        'discount_percent'     => $discountPercent,
+        'discount_amount_cents'=> $discountCents,
+        'net_fee_cents'        => $netFee,
+
+        'service_fee_cents'    => $serviceFee,
+        'summary'              => $summary,
+    ];
+}
+
 
     // Kashier expects amount in smallest unit (piasters)
     $amount = (string) $amountCents;
