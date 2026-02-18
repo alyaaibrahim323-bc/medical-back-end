@@ -31,7 +31,7 @@ class GeoIpService
 
         if (!$ip || in_array($ip, ['127.0.0.1', '::1'], true)) return null;
 
-        return Cache::remember("geoip:cc:{$ip}", now()->addDays(7), function () use ($ip) {
+        return Cache::remember("geoip:cc:{$ip}", now()->addHours(6), function () use ($ip) {
             try {
                 $path = storage_path('app/geoip/GeoLite2-Country.mmdb');
                 $reader = new Reader($path);

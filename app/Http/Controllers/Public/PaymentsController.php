@@ -36,7 +36,7 @@ class PaymentsController extends Controller
 
     $amountCents = 0;
     $payload = [];
-
+    $currency = $kashier->currency();
     // ✅ this will be returned to Flutter like the screenshot
     $summary = [
         'base_fee_cents' => 0,
@@ -54,6 +54,7 @@ class PaymentsController extends Controller
 
     if (($session->status ?? null) !== 'pending_payment') {
         return response()->json(['message' => 'Session not payable'], 422);
+        $currency = $isLocal ? 'EGP' : 'USD';
     }
 
     // الربط
@@ -170,6 +171,8 @@ class PaymentsController extends Controller
 
             'summary' => $summary,
         ];
+        $currency = strtoupper((string) ($package->currency ?? $kashier->currency()));
+
     }
 
     // Kashier expects amount in smallest unit (piasters)
@@ -178,7 +181,7 @@ class PaymentsController extends Controller
     $reference = strtoupper(Str::random(10));
 
     $payment = DB::transaction(function () use (
-        $user, $therapistId, $therapySessionId, $userPackageId, $data, $amountCents, $reference, $payload
+        $user, $therapistId, $therapySessionId, $userPackageId, $data, $amountCents, $reference, $payload,$currency
     ) {
         return Payment::create([
             'user_id' => $user->id,
