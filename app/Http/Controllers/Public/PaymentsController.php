@@ -54,7 +54,7 @@ class PaymentsController extends Controller
 
     if (($session->status ?? null) !== 'pending_payment') {
         return response()->json(['message' => 'Session not payable'], 422);
-د    }
+    }
 
     // الربط
     $therapistId = $session->therapist_id;
