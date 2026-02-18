@@ -121,7 +121,7 @@ class PaymentsController extends Controller
     ];
 
 
-    } else {
+  } else {
 
     $package = Package::where('is_active', true)->findOrFail($data['id']);
     $therapistId = $package->created_by_therapist_id;
@@ -142,35 +142,37 @@ class PaymentsController extends Controller
         ], 422);
     }
 
-    // ✅ زي single session: region based currency (لو باكدج عملتها ثابتة سيبيها بس)
+    // ✅ region
     $region  = strtoupper((string) ($user->pricing_region ?? ''));
     $isLocal = ($region === 'EG_LOCAL');
 
-    // ✅ baseFee (قبل الخصم)
-      $baseFee = $isLocal
-        ? (int) ($offer->price_cents_egp ?? 0)
-        : (int) ($offer->price_cents_usd ?? 0);
+    // ✅ baseFee (قبل الخصم) من الـ package نفسها
+    $baseFee = $isLocal
+        ? (int) ($package->price_cents_egp ?? 0)
+        : (int) ($package->price_cents_usd ?? 0);
 
-    // ✅ currency
-    $currency = strtoupper((string) ($package->currency ?: $kashier->currency()));
+    // fallback لو الأسعار الجديدة مش متسجلة
+    if ($baseFee <= 0) {
+        $baseFee = (int) ($package->price_cents ?? 0);
+    }
 
-    // ✅ discount percent
+    // ✅ currency بناءً على region (زي single session)
+    $currency = $isLocal ? 'EGP' : 'USD';
+
+    // ✅ discount
     $discountPercent = (float) ($package->discount_percent ?? 0);
     $discountPercent = max(0, min(100, $discountPercent));
 
-    // ✅ discount amount
     $discountCents = (int) round($baseFee * $discountPercent / 100);
-
-    // ✅ net price after discount
     $netFee = max(0, $baseFee - $discountCents);
 
     // ✅ service fee
     $serviceFee = (int) config('fees.package_service_cents', 0);
 
-    // ✅ total payable
+    // ✅ total
     $amountCents = $netFee + $serviceFee;
 
-    // ✅ summary (نفس single session style)
+    // ✅ summary (نفس naming بتاع single session)
     $summary = [
         'base_fee_cents'        => $baseFee,
         'service_fee_cents'     => $serviceFee,
@@ -180,18 +182,20 @@ class PaymentsController extends Controller
     ];
 
     $payload = [
-        'type'                 => 'package',
-        'package_id'           => $package->id,
+        'type'                  => 'package',
+        'package_id'            => $package->id,
+        'therapist_id'          => $therapistId,
 
-        'base_fee_cents'       => $baseFee,
-        'discount_percent'     => $discountPercent,
-        'discount_amount_cents'=> $discountCents,
-        'net_fee_cents'        => $netFee,
+        'base_fee_cents'        => $baseFee,
+        'discount_percent'      => $discountPercent,
+        'discount_amount_cents' => $discountCents,
+        'net_fee_cents'         => $netFee,
 
-        'service_fee_cents'    => $serviceFee,
-        'summary'              => $summary,
+        'service_fee_cents'     => $serviceFee,
+        'summary'               => $summary,
     ];
 }
+
 
 
     // Kashier expects amount in smallest unit (piasters)
