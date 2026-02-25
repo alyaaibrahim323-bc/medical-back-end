@@ -19,34 +19,26 @@ class UserPackageResource extends JsonResource
 
         $sessionsRemaining = max(0, (int)($this->sessions_total ?? 0) - (int)($this->sessions_used ?? 0));
 
-        // لازم تكوني عاملة eager load للعلاقة دي (lastPaidPayment)
         $lastPayment = $this->whenLoaded('lastPaidPayment') ? $this->lastPaidPayment : null;
 
-        // ===== Region-based pricing (زي single session) =====
         $region  = strtoupper((string) (optional($this->user)->pricing_region ?? ''));
         $isLocal = ($region === 'EG_LOCAL');
 
-        // base price حسب region من package
         $baseFee = $isLocal
             ? (int) ($this->package->price_cents_egp ?? 0)
             : (int) ($this->package->price_cents_usd ?? 0);
 
-        // fallback لو مش متسجلين
         if ($baseFee <= 0) {
             $baseFee = (int) ($this->package->price_cents ?? 0);
         }
 
-        // currency حسب region (لو مفيش payment)
         $fallbackCurrency = $isLocal ? 'EGP' : 'USD';
 
-        // discount percent
         $discountPercent = (float) ($this->package->discount_percent ?? 0);
         $discountPercent = max(0, min(100, $discountPercent));
 
-        // discount amount
         $discountCents = (int) round($baseFee * $discountPercent / 100);
 
-        // payable (لو مفيش last payment)
         $computedPayable = max(0, $baseFee - $discountCents);
 
         return [
@@ -68,15 +60,12 @@ class UserPackageResource extends JsonResource
                 'validity_days'      => $this->package->validity_days ?? null,
                 'can_renew'          => (bool) $this->can_renew,
 
-                // ✅ pricing output (زي single session)
                 'base_fee_cents'        => $baseFee,
                 'discount_percent'      => $discountPercent,
                 'discount_amount_cents' => $discountCents,
 
-                // ✅ اللي اتدفع فعلاً لو موجود، وإلا احسبيه
                 'payable_cents'         => $lastPayment?->amount_cents ?? $computedPayable,
 
-                // ✅ currency: payment أولاً، وإلا fallback region
                 'currency'              => $lastPayment?->currency ?? $fallbackCurrency,
             ],
 
@@ -88,7 +77,6 @@ class UserPackageResource extends JsonResource
             ] : null,
 
             'payment' => [
-                // خليه من payload لأن method غالبًا مش column
                 'method'         => data_get($lastPayment?->payload, 'kashier_webhook.data.method'),
                 'provider'       => $lastPayment?->provider,
                 'status'         => $lastPayment?->status,

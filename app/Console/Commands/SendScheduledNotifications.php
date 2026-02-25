@@ -20,8 +20,8 @@ class SendScheduledNotifications extends Command
         $now = now();
 
         Notification::where('status', 'scheduled')
-            ->whereNotNull('scheduled_for')
-            ->where('scheduled_for', '<=', $now)
+            ->whereNotNull('scheduled_at')
+            ->where('scheduled_at', '<=', $now)
             ->chunkById(50, function ($notifications) {
                 foreach ($notifications as $notification) {
                     $data    = $notification->data ?? [];
