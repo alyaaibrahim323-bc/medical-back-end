@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Log;
+
 class KashierService
 {
     public function baseUrl(): string
@@ -14,14 +16,24 @@ class KashierService
         return (string) config('services.kashier.merchant_id');
     }
 
-    public function secret(): string
+    public function apiKey(): string
     {
-        return (string) config('services.kashier.secret');
+        return (string) config('services.kashier.api_key');
+    }
+
+    public function secretKey(): string
+    {
+        return (string) config('services.kashier.secret_key');
     }
 
     public function mode(): string
     {
         return (string) config('services.kashier.mode', 'test');
+    }
+
+    public function currency(): string
+    {
+        return (string) config('services.kashier.currency', 'EGP');
     }
 
     public function redirectUrl(): string
@@ -34,30 +46,27 @@ class KashierService
         return (string) config('services.kashier.webhook_url');
     }
 
-    
-    public function checkoutUrl(array $params): string
+    /**
+     * Kashier hash غالبًا بيكون HMAC-SHA256 على:
+     * merchantId + order + amount + currency (بنفس الترتيب)
+     * (وفي integrations كتير بيستخدموا نقطة "." للفصل)
+     */
+    public function makeHash(string $merchantId, string $order, string $amount, string $currency): string
+    {
+        $message = "{$merchantId}.{$order}.{$amount}.{$currency}";
+
+        Log::info('KASHIER_HASH_DEBUG', [
+            'message' => $message,
+            'secret_len' => strlen($this->apiKey()),
+        ]);
+            $path = "/?payment=".$message;
+
+
+        return hash_hmac('sha256', $path, $this->apiKey(),false);
+    }
+
+    public function buildPaymentUrl(array $params): string
     {
         return $this->baseUrl() . '/?' . http_build_query($params);
-    }
-
-
-    public function makeSignature(array $params): string
-    {
-      
-
-        $merchantId  = $params['merchantId'] ?? '';
-        $orderId     = $params['orderId'] ?? '';
-        $amount      = $params['amount'] ?? '';
-        $currency    = $params['currency'] ?? '';
-        $redirectUrl = $params['redirectUrl'] ?? '';
-
-        $raw = $merchantId.$orderId.$amount.$currency.$redirectUrl.$this->secret();
-        return hash('sha256', $raw);
-    }
-
-    public function verifySignature(array $incoming, string $incomingSig): bool
-    {
-        $expected = $this->makeSignature($incoming);
-        return hash_equals($expected, $incomingSig);
     }
 }

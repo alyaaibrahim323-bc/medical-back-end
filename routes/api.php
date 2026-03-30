@@ -75,7 +75,6 @@ Route::prefix('auth')->group(function () {
 });
 
 // ===== Admin(requires role:admin) =====
-
 Route::middleware(['auth:sanctum','role:admin'])->prefix('admin')->group(function () {
     Route::get('/therapists',        [AdminTherapist::class, 'index']);
     //get from therapist tabel {id}
@@ -254,6 +253,8 @@ Route::middleware(['auth:sanctum','role:doctor'])->prefix('doctor')->group(funct
     });
 
 // ===== Public =====
+Route::middleware(['auth:sanctum'])->group(function () {
+
 Route::get('/home/banners', [homeController::class, 'homebanner']);
 Route::get('/home/quote',   [homeController::class,  'homeQuote']);
 Route::get('/therapists',                   [PublicTherapist::class, 'index']);
@@ -261,10 +262,11 @@ Route::get('/therapists/{id}',              [PublicTherapist::class, 'show']);
 Route::get('/therapists/{id}/packages',     [PublicTherapist::class, 'packages']);
 Route::get('/therapists/{id}/single-session',[PublicTherapist::class, 'singleSession']);
 Route::get('/therapists/{id}/availability', [PublicTherapist::class, 'availability']);
+});
 
 
 Route::middleware(['auth:sanctum'])->prefix('me')->group(function () {
-    Route::get('/profile',            [UserProfileController::class, 'show']);
+  Route::get('/profile',            [UserProfileController::class, 'show']);
   Route::patch('/profile/info', [UserProfileController::class, 'updateProfileInfo']);
 
     // تحديث الصورة فقط
@@ -280,7 +282,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::delete('/therapy-sessions/{id}', [TherapySessionController::class, 'cancel']);
 
     // Packages purchase & mine
-    Route::post('/packages/{id}/checkout',  [PackageCheckoutController::class, 'checkout']);
+    // Route::post('/packages/{id}/checkout',  [PackageCheckoutController::class, 'checkout']);
     Route::get('/me/packages',              [MePackagesController::class, 'index']);
     Route::get('/me/packages/{id}',         [MePackagesController::class, 'show']);
 });

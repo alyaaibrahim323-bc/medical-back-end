@@ -13,8 +13,8 @@ class MePackagesController extends Controller
                 'package',
                 'therapist.user',
                 'user',
-                'payments',      
-                'redemptions',   
+                'payments',
+                'redemptions',
             ])
             ->where('user_id', auth()->id())
             ->orderByDesc('id');
@@ -28,8 +28,10 @@ class MePackagesController extends Controller
                 'package',
                 'therapist.user',
                 'user',
-                'payments',     
+                'payments',
                 'redemptions',
+                'lastPaidPayment',
+
             ])
             ->where('user_id', auth()->id())
             ->findOrFail($id);

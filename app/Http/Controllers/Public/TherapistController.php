@@ -13,11 +13,41 @@ use Illuminate\Http\Request;
 
 class TherapistController extends Controller
 {
+    // =========================
+    // Pricing helpers
+    // =========================
+    private function pricingRegion(Request $r): string
+    {
+        return $r->user()?->pricing_region ?? 'EG_LOCAL';
+    }
 
+    private function isEgypt(Request $r): bool
+    {
+        return $this->pricingRegion($r) === 'EG_LOCAL';
+    }
+
+    private function currencyFor(Request $r): string
+    {
+        return $this->isEgypt($r) ? 'EGP' : 'USD';
+    }
+
+    private function offerPriceColumn(Request $r): string
+    {
+        // column name used in SQL (JOIN alias sso)
+        return $this->isEgypt($r) ? 'sso.price_cents_egp' : 'sso.price_cents_usd';
+    }
+
+    // =========================
+    // Public list therapists
+    // =========================
     public function index(Request $request)
     {
-        $q = Therapist::with('user')
-            ->where('is_active', true)
+        $priceCol = $this->offerPriceColumn($request);
+        $currency = $this->currencyFor($request);
+        $isEgypt  = $this->isEgypt($request);
+
+        $q = Therapist::with(['user', 'activeSingleSessionOffer'])
+            ->where('therapists.is_active', true)
 
             ->when($request->filled('q'), function ($x) use ($request) {
                 $kw = '%' . $request->q . '%';
@@ -31,7 +61,6 @@ class TherapistController extends Controller
                 });
             })
 
-           
             ->when($request->filled('specialty'), function ($x) use ($request) {
                 $kw = '%' . $request->specialty . '%';
                 $x->where(function ($y) use ($kw) {
@@ -40,38 +69,62 @@ class TherapistController extends Controller
                 });
             })
 
+            // join offer for filtering/sorting by price
+            ->leftJoin('single_session_offers as sso', function ($join) {
+                $join->on('sso.therapist_id', '=', 'therapists.id')
+                    ->where('sso.is_active', true);
+            })
+            ->select('therapists.*')
+
+            // ✅ price filters now use correct column per region
             ->when($request->filled('price_min'), fn ($x) =>
-                $x->where('price_cents', '>=', (int) $request->price_min)
+                $x->where($priceCol, '>=', (int) $request->price_min)
             )
             ->when($request->filled('price_max'), fn ($x) =>
-                $x->where('price_cents', '<=', (int) $request->price_max)
+                $x->where($priceCol, '<=', (int) $request->price_max)
             )
 
             ->when($request->filled('rating_min'), fn ($x) =>
-                $x->where('rating_avg', '>=', (float) $request->rating_min)
+                $x->where('therapists.rating_avg', '>=', (float) $request->rating_min)
             )
 
-            ->orderByDesc('rating_avg')
-            ->orderBy('price_cents');
+            ->orderByDesc('therapists.rating_avg')
+            // ✅ sorting by region-based price column
+            ->orderBy($priceCol);
 
         $paginated = $q->paginate(20);
 
         $paginated->setCollection(
-            $paginated->getCollection()->map(function (Therapist $t) {
+            $paginated->getCollection()->map(function (Therapist $t) use ($isEgypt, $currency) {
+
+                $offer = $t->activeSingleSessionOffer;
+
+                // ✅ choose offer price by region
+                $offerPrice = 0;
+                if ($offer) {
+                    $offerPrice = (int) ($isEgypt ? ($offer->price_cents_egp ?? 0) : ($offer->price_cents_usd ?? 0));
+                }
+
+                // legacy fallback
+                if ($offerPrice <= 0) {
+                    $offerPrice = (int) ($t->price_cents ?? 0);
+                }
+
                 return [
                     'id' => $t->id,
-
                     'user' => [
                         'id'     => $t->user?->id,
                         'name'   => $t->user?->name,
                         'email'  => $t->user?->email,
                         'avatar' => $t->user?->avatar,
                     ],
-
                     'specialty'        => $t->specialtyText,
                     'bio'              => $t->bioText,
-                    'price_cents'      => $t->price_cents,
-                    'currency'         => $t->currency,
+
+                    // ✅ still return same fields (Flutter-safe)
+                    'price_cents'      => $offerPrice,
+                    'currency'         => $currency,
+
                     'rating_avg'       => $t->rating_avg,
                     'rating_count'     => $t->rating_count,
                     'years_experience' => $t->years_experience,
@@ -85,43 +138,65 @@ class TherapistController extends Controller
         return response()->json($paginated);
     }
 
+    // =========================
+    // Public therapist details
+    // =========================
+    public function show(Request $r, $id)
+    {
+        $isEgypt  = $this->isEgypt($r);
+        $currency = $this->currencyFor($r);
 
-    public function show($id)
-{
-    $t = Therapist::with(['user','chatAvailabilities'])
-        ->where('is_active', true)
-        ->findOrFail($id);
+        $t = Therapist::with(['user','chatAvailabilities'])
+            ->where('is_active', true)
+            ->findOrFail($id);
 
-    $availableChat = $t->chatAvailabilities
-        ->where('is_active', true)
-        ->sortBy('day_of_week')
-        ->values();
+        $availableChat = $t->chatAvailabilities
+            ->where('is_active', true)
+            ->sortBy('day_of_week')
+            ->values();
 
-    return response()->json([
-        'data' => [
-            'id' => $t->id,
-            'user' => [
-                'id'     => $t->user?->id,
-                'name'   => $t->user?->name,
-                'email'  => $t->user?->email,
-                'avatar' => $t->user?->avatar,
-            ],
-            'specialty'        => $t->specialtyText,
-            'bio'              => $t->bioText,
-            'price_cents'      => $t->price_cents,
-            'currency'         => $t->currency,
-            'rating_avg'       => $t->rating_avg,
-            'rating_count'     => $t->rating_count,
-            'is_active'        => $t->is_active,
-            'years_experience' => $t->years_experience,
-            'languages'        => $t->languages,
+        $offer = SingleSessionOffer::where('therapist_id', $t->id)
+            ->where('is_active', true)
+            ->first();
 
-            'available_chat'   => TherapistChatAvailabilityResource::collection($availableChat),
-        ]
-    ]);
-}
+        $price = 0;
+        if ($offer) {
+            $price = (int) ($isEgypt ? ($offer->price_cents_egp ?? 0) : ($offer->price_cents_usd ?? 0));
+        }
+        if ($price <= 0) {
+            $price = (int) ($t->price_cents ?? 0);
+        }
 
-    
+        return response()->json([
+            'data' => [
+                'id' => $t->id,
+                'user' => [
+                    'id'     => $t->user?->id,
+                    'name'   => $t->user?->name,
+                    'email'  => $t->user?->email,
+                    'avatar' => $t->user?->avatar,
+                ],
+                'specialty'        => $t->specialtyText,
+                'bio'              => $t->bioText,
+
+                // ✅ region-based price
+                'price_cents'      => $price,
+                'currency'         => $currency,
+
+                'rating_avg'       => $t->rating_avg,
+                'rating_count'     => $t->rating_count,
+                'is_active'        => $t->is_active,
+                'years_experience' => $t->years_experience,
+                'languages'        => $t->languages,
+
+                'available_chat'   => TherapistChatAvailabilityResource::collection($availableChat),
+            ]
+        ]);
+    }
+
+    // =========================
+    // Availability (unchanged)
+    // =========================
     public function availability($id, Request $request, TherapistAvailabilityService $availability)
     {
         $request->validate([
@@ -168,32 +243,65 @@ class TherapistController extends Controller
         return response()->json(['data' => $normalized]);
     }
 
-    
-    public function packages($id)
-    {
-        $items = Package::where('is_active', true)
-            ->where('applicability', 'therapist')
-            ->where('created_by_therapist_id', $id)
-            ->orderBy('price_cents')
-            ->get()
-            ->map(function (Package $p) {
-                return [
-                    'id'                   => $p->id,
-                    'name'                 => $p->name_localized,
-                    'sessions_count'       => $p->sessions_count,
-                    'session_duration_min' => $p->session_duration_min,
-                    'price_cents'          => $p->price_cents,
-                    'currency'             => $p->currency,
-                    'discount_percent'     => $p->discount_percent,
-                ];
-            });
+    // =========================
+    // Therapist packages (region-based price)
+    // =========================
+    public function packages(Request $r, $id)
+{
+    // ✅ اعتمدي على الـ saved pricing_region لو user logged-in
+    $region  = strtoupper((string) ($r->user()?->pricing_region ?? ''));
+    $isEgypt = ($region === 'EG_LOCAL');
 
-        return response()->json(['data' => $items]);
+    // لو endpoint public ومفيش user -> ارجعي للـ IP logic بتاعك
+    if (!$r->user()) {
+        $isEgypt = $this->isEgypt($r);
     }
 
+    $currency = $isEgypt ? 'EGP' : 'USD';
+    $orderCol = $isEgypt ? 'price_cents_egp' : 'price_cents_usd';
 
-    public function singleSession($id)
+    $items = Package::where('is_active', true)
+        ->where('applicability', 'therapist')
+        ->where('created_by_therapist_id', $id)
+        ->orderBy($orderCol)
+        ->get()
+        ->map(function (Package $p) use ($isEgypt, $currency) {
+
+            $baseFee = (int) ($isEgypt ? ($p->price_cents_egp ?? 0) : ($p->price_cents_usd ?? 0));
+            if ($baseFee <= 0) $baseFee = (int) ($p->price_cents ?? 0); // legacy fallback
+
+            $discountPercent = (float) ($p->discount_percent ?? 0);
+            $discountPercent = max(0, min(100, $discountPercent));
+
+            $discountCents = (int) round($baseFee * $discountPercent / 100);
+            $finalFee = max(0, $baseFee - $discountCents);
+
+            return [
+                'id'                   => $p->id,
+                'name'                 => $p->name_localized,
+                'sessions_count'       => $p->sessions_count,
+                'session_duration_min' => $p->session_duration_min,
+
+                // ✅ consistent pricing fields
+                'price_cents'          => $baseFee,      // before discount
+                'final_price_cents'    => $finalFee,     // after discount
+                'discount_percent'     => $discountPercent,
+                'currency'             => $currency,
+            ];
+        });
+
+    return response()->json(['data' => $items]);
+}
+
+
+    // =========================
+    // Single session offer (region-based price)
+    // =========================
+    public function singleSession(Request $r, $id)
     {
+        $isEgypt  = $this->isEgypt($r);
+        $currency = $this->currencyFor($r);
+
         $offer = SingleSessionOffer::where('therapist_id', $id)
             ->where('is_active', true)
             ->first();
@@ -202,10 +310,19 @@ class TherapistController extends Controller
             return response()->json(['data' => null]);
         }
 
+        $price = (int) ($isEgypt ? ($offer->price_cents_egp ?? 0) : ($offer->price_cents_usd ?? 0));
+
+        if ($price <= 0) {
+            return response()->json([
+                'message' => 'Pricing not set for your region',
+                'data' => null
+            ], 422);
+        }
+
         return response()->json([
             'data' => [
-                'price_cents'      => $offer->price_cents,
-                'currency'         => $offer->currency,
+                'price_cents'      => $price,
+                'currency'         => $currency,
                 'duration_min'     => $offer->duration_min,
                 'discount_percent' => $offer->discount_percent,
                 'sessions_count'   => 1,

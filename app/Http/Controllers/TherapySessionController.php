@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
 
 class TherapySessionController extends Controller
 {
-   
+
     public function index(Request $r)
     {
         $user = $r->user();
@@ -32,7 +32,6 @@ class TherapySessionController extends Controller
         if ($scope === 'upcoming') {
             $q->where('scheduled_at', '>=', now())
                 ->whereIn('status', [
-                    TherapySession::STATUS_PENDING,
                     TherapySession::STATUS_CONFIRMED,
                 ]);
         } elseif ($scope === 'past') {
@@ -42,7 +41,7 @@ class TherapySessionController extends Controller
         return response()->json(['data' => $q->paginate(20)]);
     }
 
-    
+
     public function show(Request $r, $id)
     {
         $user = $r->user();
@@ -54,7 +53,7 @@ class TherapySessionController extends Controller
         return response()->json(['data' => $s]);
     }
 
-  
+
     public function store(Request $r, TherapistAvailabilityService $availability)
     {
         $user = $r->user();
@@ -97,7 +96,7 @@ class TherapySessionController extends Controller
         );
     }
 
-    
+
     public function cancel(Request $r, $id)
     {
         $user = $r->user();
@@ -118,88 +117,119 @@ class TherapySessionController extends Controller
         return response()->json(['message' => 'Session cancelled']);
     }
 
-    
-    protected function createSingleSessionWithPayment($user, Therapist $therapist, Carbon $scheduledAt, int $durationMin)
-    {
-        $offer = SingleSessionOffer::where('therapist_id', $therapist->id)
-            ->where('is_active', true)
-            ->first();
 
-        $sessionFee = $offer
-            ? (int) $offer->price_cents
-            : (int) ($therapist->price_cents ?? 0);
+ protected function createSingleSessionWithPayment($user, Therapist $therapist, Carbon $scheduledAt, int $durationMin)
+{
+    // ✅ 1) region من اليوزر (جاية من step 2: login geo)
+    $region  = $user->pricing_region ?? 'EG_LOCAL';
+    $isEgypt = ($region === 'EG_LOCAL');
 
-        $currency = $offer
-            ? ($offer->currency ?? 'EGP')
-            : ($therapist->currency ?? 'EGP');
+    // ✅ 2) العملة على أساس الريجن
+    $currency = $isEgypt ? 'EGP' : 'USD';
 
-        $serviceFee = (int) config('fees.single_session_service_cents', 0);
+    // ✅ 3) هات offer active
+    $offer = SingleSessionOffer::where('therapist_id', $therapist->id)
+        ->where('is_active', true)
+        ->first();
 
-        $total = $sessionFee + $serviceFee;
+    // ✅ 4) السعر على أساس البلد
+    $sessionFee = 0;
 
-        $session = null;
-        $payment = null;
-
-        DB::transaction(function () use (
-            $user,
-            $therapist,
-            $scheduledAt,
-            $durationMin,
-            $sessionFee,
-            $serviceFee,
-            $total,
-            $currency,
-            &$session,
-            &$payment
-        ) {
-            $session = TherapySession::create([
-                'user_id'      => $user->id,
-                'therapist_id' => $therapist->id,
-                'scheduled_at' => $scheduledAt,
-                'duration_min' => $durationMin,
-                'status'       => TherapySession::STATUS_PENDING,
-                'billing_type' => 'single',
-            ]);
-
-            $payment = Payment::create([
-                'user_id'            => $user->id,
-                'therapist_id'       => $therapist->id,
-                'therapy_session_id' => $session->id,
-                'user_package_id'    => null,
-                'purpose'            => 'single_session',
-                'amount_cents'       => $total,
-                'currency'           => $currency,
-                'provider'           => 'paymob',
-                'status'             => 'pending',
-                'reference'          => 'SS-' . Str::uuid(),
-                'payload'            => [
-                    'session_fee_cents' => $sessionFee,
-                    'service_fee_cents' => $serviceFee,
-                    'duration_min'      => $durationMin,
-                    'therapist_id'      => $therapist->id,
-                    'user_id'           => $user->id,
-                ],
-            ]);
-        });
-
-        /** @var \App\Models\TherapySession $session */
-        /** @var \App\Models\Payment $payment */
-
-        return response()->json([
-            'data' => [
-                'session' => $session->load('therapist.user'),
-                'payment' => [
-                    'id'                => $payment->id,
-                    'amount_cents'      => $payment->amount_cents,
-                    'currency'          => $payment->currency,
-                    'session_fee_cents' => $sessionFee,
-                    'service_fee_cents' => $serviceFee,
-                    'reference'         => $payment->reference,
-                ],
-                'billing_source' => 'single',
-            ]
-        ], 201);
+    if ($offer) {
+        $sessionFee = (int) ($isEgypt ? ($offer->price_cents_egp ?? 0) : ($offer->price_cents_usd ?? 0));
     }
+
+    // ✅ fallback legacy (لو عندك دكاترة قدام لسه ماحطوش السعرين)
+    if ($sessionFee <= 0) {
+        $sessionFee = (int) ($therapist->price_cents ?? 0);
+    }
+
+    // ✅ لو لسه 0 يبقى الدكتور مدخلش سعر للبلد دي
+    if ($sessionFee <= 0) {
+        return response()->json([
+            'message' => 'Pricing not set for your region',
+            'data' => [
+                'pricing_region' => $region,
+                'currency' => $currency,
+                'therapist_id' => $therapist->id,
+            ]
+        ], 422);
+    }
+
+    // ✅ 5) Service fee (ممكن تفصليه مصر/برا أو تخليه واحد)
+    $serviceFee = (int) config('fees.single_session_service_cents', 0);
+
+    // لو عايزة تفصلي:
+    // $serviceFee = (int) config($isEgypt ? 'fees.single_session_service_cents_eg' : 'fees.single_session_service_cents_intl', 0);
+
+    $total = $sessionFee + $serviceFee;
+
+    $session = null;
+    $payment = null;
+
+    DB::transaction(function () use (
+        $user,
+        $therapist,
+        $scheduledAt,
+        $durationMin,
+        $sessionFee,
+        $serviceFee,
+        $total,
+        $currency,
+        $region,
+        $offer,
+        &$session,
+        &$payment
+    ) {
+        $session = TherapySession::create([
+            'user_id'      => $user->id,
+            'therapist_id' => $therapist->id,
+            'scheduled_at' => $scheduledAt,
+            'duration_min' => $durationMin,
+            'status'       => TherapySession::STATUS_PENDING, // pending_payment
+            'billing_type' => 'single',
+        ]);
+
+        $payment = Payment::create([
+            'user_id'            => $user->id,
+            'therapist_id'       => $therapist->id,
+            'therapy_session_id' => $session->id,
+            'user_package_id'    => null,
+            'purpose'            => Payment::PURPOSE_SINGLE_SESSION,
+            'amount_cents'       => $total,
+            'currency'           => $currency,     // ✅ بقت حسب البلد
+            'provider'           => 'kashier',
+            'status'             => Payment::STATUS_PENDING,
+            'reference'          => 'SS-' . Str::uuid(),
+            'payload'            => [
+                'pricing_region'     => $region,
+                'offer_id'           => $offer?->id,
+                'session_fee_cents'  => $sessionFee,
+                'service_fee_cents'  => $serviceFee,
+                'duration_min'       => $durationMin,
+                'therapist_id'       => $therapist->id,
+                'user_id'            => $user->id,
+            ],
+        ]);
+    });
+
+    return response()->json([
+        'data' => [
+            'session' => $session->load('therapist.user'),
+            'payment' => [
+                'id'                => $payment->id,
+                'amount_cents'      => $payment->amount_cents,
+                'currency'          => $payment->currency,
+                'session_fee_cents' => $sessionFee,
+                'service_fee_cents' => $serviceFee,
+                'reference'         => $payment->reference,
+            ],
+            'billing_source' => 'single',
+        ]
+    ], 201);
+}
+
+
 
     protected function createSessionFromPackage(
         $user,
@@ -233,6 +263,22 @@ class TherapySessionController extends Controller
 
         $session = null;
 
+        $hasActiveSession = TherapySession::query()
+        ->where('user_id', $user->id)
+        ->where('user_package_id', $userPackage->id)
+        ->whereIn('status', [
+            TherapySession::STATUS_PENDING,
+            TherapySession::STATUS_CONFIRMED,
+        ])
+        ->exists();
+
+    if ($hasActiveSession) {
+        return response()->json([
+            'message' => 'You already have an active session in this package. Complete it before booking another one.'
+        ], 422);
+}
+
+
         DB::transaction(function () use (
             $user,
             $therapist,
@@ -257,7 +303,6 @@ class TherapySessionController extends Controller
                 'redeemed_at'        => now(),
                 'notes'              => null,
             ]);
-
             $userPackage->sessions_used += 1;
 
             if ($userPackage->sessions_used >= $userPackage->sessions_total) {
@@ -265,6 +310,8 @@ class TherapySessionController extends Controller
             }
 
             $userPackage->save();
+
+
         });
 
         /** @var \App\Models\TherapySession $session */

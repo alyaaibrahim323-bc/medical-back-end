@@ -14,13 +14,13 @@ class AdminChatResource extends JsonResource
             'id'                  => $this->id,
             'client_name'         => $this->user->name,
             'client_email'        => $this->user->email,
+            'avatar'              =>$this->user->avatar,
             'assigned_therapist'  => $this->therapist?->user?->name,
+            'avatar_therapist'  => $this->therapist?->user?->avatar,
             'status'              => $this->status,
             'last_message'        => $lastMsg?->body,
             'last_from'           => $lastMsg?->sender_role,
             'last_message_at'     => $this->last_message_at?->toDateTimeString(),
-
-            // 👇 هنا التعديل المهم
             'session_date'        => $this->session
                                         ? ($this->session->scheduled_at
                                             ? $this->session->scheduled_at->toDateString()

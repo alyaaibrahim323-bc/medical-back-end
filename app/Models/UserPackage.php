@@ -25,13 +25,18 @@ class UserPackage extends Model
 {
     return $this->hasMany(Payment::class);
 }
-
+ public function lastPaidPayment()
+{
+    return $this->hasOne(\App\Models\Payment::class, 'user_package_id')
+        ->where('status', \App\Models\Payment::STATUS_PAID)
+        ->latestOfMany();
+}
 
     public function getCanRenewAttribute(): bool
     {
         $noSessionsLeft = $this->sessions_used >= $this->sessions_total;
         $isExpired      = $this->expires_at && $this->expires_at->isPast();
 
-        return $noSessionsLeft || $isExpired || $this->status === 'completed';
+        return $noSessionsLeft || $isExpired ;
     }
 }

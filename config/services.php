@@ -35,15 +35,24 @@ return [
         ],
     ],
 
-    // config/services.php
- 'kashier' => [
-  'base_url'     => env('KASHIER_BASE_URL','https://payments.kashier.io'),
-  'merchant_id'  => env('KASHIER_MERCHANT_ID'),
-  'secret'       => env('KASHIER_SECRET'),
-  'mode'         => env('KASHIER_MODE','test'),
-  'redirect_url' => env('KASHIER_REDIRECT_URL'),
-  'webhook_url'  => env('KASHIER_WEBHOOK_URL'),
+// config/services.php
+'kashier' => [
+    'merchant_id'  => env('KASHIER_MERCHANT_ID'),
+    'api_key'      => env('KASHIER_API_KEY'),
+    'secret_key'   => env('KASHIER_SECRET_KEY'),
+
+    'base_url'     => env('KASHIER_BASE_URL', 'https://payments.kashier.io'),
+    'mode'         => env('KASHIER_MODE', 'test'),
+
+    'redirect_url' => env('KASHIER_REDIRECT_URL'),
+    'webhook_url'  => env('KASHIER_WEBHOOK_URL'),
 ],
+
+
+
+
+
+
 
 
 

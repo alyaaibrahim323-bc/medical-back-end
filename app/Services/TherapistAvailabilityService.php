@@ -11,7 +11,7 @@ use App\Models\TherapySession;
 
 class TherapistAvailabilityService
 {
-    
+
     public function slotsForRange(int $therapistId, Carbon $from, Carbon $to, int $defaultSlot = 60): array
     {
         $schedules = TherapistSchedule::where('therapist_id', $therapistId)
@@ -37,11 +37,14 @@ class TherapistAvailabilityService
                 for ($t = $start->copy(); $t->lt($end); $t->addMinutes($step)) {
                     $slotEnd = $t->copy()->addMinutes($step);
                     if ($slotEnd->gt($end)) break;
+                   if ($this->isSlotFree($therapistId, $t, $slotEnd)) {
                     $slots[] = [
                         'start' => $t->toIso8601String(),
                         'end'   => $slotEnd->toIso8601String(),
                         'duration_min' => $step,
                     ];
+                }
+
                 }
             }
             $days[$date] = array_values($slots);
@@ -56,7 +59,7 @@ class TherapistAvailabilityService
                 TherapySession::STATUS_CANCELLED,
                 TherapySession::STATUS_NO_SHOW,
             ])
-            
+
             ->where('scheduled_at', '<', $end)
             ->whereRaw(
                 'DATE_ADD(scheduled_at, INTERVAL duration_min MINUTE) > ?',

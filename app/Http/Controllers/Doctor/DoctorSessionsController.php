@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Mail;
 
 class DoctorSessionsController extends Controller
 {
-    
+
     public function index(Request $r)
 {
     $therapistId = $r->user()->therapist->id;
@@ -78,7 +78,7 @@ class DoctorSessionsController extends Controller
         $q->where('status', $r->status);
     }
 
-    $q->orderBy('scheduled_at', 'desc');
+    $q->orderByDesc('created_at');
 
     return response()->json([
         'data'   => $q->paginate(20),
@@ -87,13 +87,13 @@ class DoctorSessionsController extends Controller
 }
 
 
-   
+
 public function show(Request $r, $id)
 {
     $therapistId = $r->user()->therapist->id;
 
     $s = TherapySession::with([
-            'user',          
+            'user',
             'payment',
             'therapist',
             'therapist.user',
@@ -147,7 +147,7 @@ public function show(Request $r, $id)
                 'amount_cents' => $s->payment->amount_cents,
                 'currency'     => $s->payment->currency,
                 'status'       => $s->payment->status,
-                'provider'     => $s->payment->provider, 
+                'provider'     => $s->payment->provider,
             ] : null,
         ],
     ]);
@@ -184,7 +184,7 @@ public function show(Request $r, $id)
         return response()->json(['data' => $session->refresh()]);
     }
 
-  
+
     public function createZoom(Request $r, int $id, ZoomService $zoom)
     {
         $therapistId = $r->user()->therapist->id;
@@ -248,7 +248,7 @@ public function show(Request $r, $id)
         }
     }
 
-  
+
     public function addSessionLink(Request $r, int $id)
     {
         $data = $r->validate([

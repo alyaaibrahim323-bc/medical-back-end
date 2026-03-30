@@ -11,9 +11,16 @@ return [
         'body'  => 'How was your session with :doctor? Tap to leave a rating.',
     ],
 
-    'payment_success' => [
-        'title' => 'Payment Successful',
-        'body'  => 'Your payment of :amount EGP for :item has been completed.',
+    // ✅ Single session after payment
+    'payment_success_session' => [
+        'title' => 'Session Confirmed',
+        'body'  => 'Your session is confirmed. Please check your email until the session link is sent.',
+    ],
+
+    // ✅ Package after payment
+    'payment_success_package' => [
+        'title' => 'Package Activated',
+        'body'  => 'Your package has been activated successfully.',
     ],
 
     'payment_failed' => [

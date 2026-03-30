@@ -16,10 +16,13 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
 
-      
+
         $middleware->api([
             'throttle:api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \App\Http\Middleware\TrustProxies::class,
+            \App\Http\Middleware\EnsureUserGeo::class,
+
         ]);
         $middleware->appendToGroup('api', SetLocaleFromRequest::class);
 

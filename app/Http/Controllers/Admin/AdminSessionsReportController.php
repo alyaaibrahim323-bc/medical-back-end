@@ -62,7 +62,7 @@ public function index(Request $r)
     // ✅ same search affects list
     $applySearch($q);
 
-    $q->orderBy('scheduled_at', 'desc');
+    $q->orderByDesc('created_at');
 
     return response()->json([
         'data'   => $q->paginate(20),

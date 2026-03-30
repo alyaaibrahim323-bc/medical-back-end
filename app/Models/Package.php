@@ -9,7 +9,8 @@ class Package extends Model
     protected $fillable = [
         'name','description','sessions_count','session_duration_min',
         'price_cents','discount_percent','currency','validity_days',
-        'applicability','is_active','created_by_therapist_id'
+        'applicability','is_active','created_by_therapist_id','price_cents_egp','price_cents_usd'
+
     ];
 
     protected $casts = [
