@@ -11,7 +11,7 @@ class EnsureUserGeo
 {
     public function handle(Request $request, Closure $next)
     {
-         Log::info('GEO_DEBUG', [
+        Log::info('GEO_DEBUG', [
         'laravel_ip' => $request->ip(),
         'cf_ip'      => $request->header('CF-Connecting-IP'),
         'xff'        => $request->header('X-Forwarded-For'),
@@ -21,7 +21,6 @@ class EnsureUserGeo
         $user = $request->user();
         if (!$user) return $next($request);
 
-        // ✅ لو موجود ومش قديم (7 أيام)
         if (
             !empty($user->pricing_region) &&
             !empty($user->geo_detected_at) &&
@@ -36,7 +35,6 @@ class EnsureUserGeo
             $ip = $geo->clientIp($request);
             $country = $geo->detectCountryFromIp($ip);
 
-            // ✅ لو فشلنا نحدد الدولة، ما نبوّظش الداتا
             if (!$country) {
                 return $next($request);
             }

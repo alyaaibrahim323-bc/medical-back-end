@@ -43,7 +43,7 @@ class ScheduleController extends Controller
     $weeknames = array_values(array_unique(array_map(fn($x)=>strtolower(trim($x)), $data['weekday'])));
     $weeknums  = array_map(fn($name)=>$nameToNum[$name], $weeknames);
 
-    
+
     $existing = \App\Models\TherapistSchedule::query()
         ->where('therapist_id', $therapistId)
         ->whereIn('weekday', $weeknums)
@@ -52,7 +52,7 @@ class ScheduleController extends Controller
 
     $now = now();
 
-   
+
     if (!empty($existing)) {
         \App\Models\TherapistSchedule::where('therapist_id', $therapistId)
             ->whereIn('weekday', $existing)
@@ -65,10 +65,10 @@ class ScheduleController extends Controller
             ]);
     }
 
-    
+
     $toCreateNums = array_values(array_diff($weeknums, $existing));
 
-   
+
     $payload = array_map(function($w) use ($therapistId, $data, $now){
         return [
             'therapist_id' => $therapistId,
@@ -93,11 +93,9 @@ class ScheduleController extends Controller
     return response()->json([
         'message'      => 'Schedules created successfully',
         'created'      => $createdNames,
-        'skipped_days' => $skippedNames, 
+        'skipped_days' => $skippedNames,
     ]);
 }
-
-
 
 
     public function update(StoreScheduleRequest $request, $id)
@@ -156,7 +154,7 @@ class ScheduleController extends Controller
 
     return response()->json([
         'message' => 'Schedules replaced successfully',
-        'created' => $weeknames, 
+        'created' => $weeknames,
         'data'    => TherapistSchedule::where('therapist_id', $therapistId)->orderBy('weekday')->get(),
     ]);
 }

@@ -28,11 +28,9 @@ class SingleSessionManageController extends Controller
         $tid       = $therapist->id;
 
         $data = $r->validate([
-            // ✅ الجديد
             'price_cents_egp'  => ['nullable','integer','min:0'],
             'price_cents_usd'  => ['nullable','integer','min:0'],
 
-            // ✅ قديم (compat)
             'price_cents'      => ['nullable','integer','min:0'],
             'currency'         => ['nullable','string','size:3'],
 
@@ -41,7 +39,6 @@ class SingleSessionManageController extends Controller
             'is_active'        => ['boolean'],
         ]);
 
-        // ✅ Backward compatibility
         if (!isset($data['price_cents_egp']) && !isset($data['price_cents_usd']) && isset($data['price_cents'])) {
             $cur = strtoupper((string)($data['currency'] ?? 'EGP'));
             if ($cur === 'USD') $data['price_cents_usd'] = (int) $data['price_cents'];
@@ -64,7 +61,6 @@ class SingleSessionManageController extends Controller
                 'price_cents_egp' => $egp,
                 'price_cents_usd' => $usd,
 
-                // legacy fields (اختياري نحدثهم)
                 'price_cents' => $egp > 0 ? $egp : $usd,
                 'currency' => $egp > 0 ? 'EGP' : 'USD',
 
@@ -74,7 +70,6 @@ class SingleSessionManageController extends Controller
             ]
         );
 
-        // لو عندك therapist table بتخزن price/currency، خليها legacy برضه:
         $therapist->update([
             'price_cents' => $egp > 0 ? $egp : $usd,
             'currency'    => $egp > 0 ? 'EGP' : 'USD',
@@ -85,7 +80,7 @@ class SingleSessionManageController extends Controller
 
 
     public function update(Request $r)
-{
+    {
     $therapist = $r->user()->therapist;
     $tid       = $therapist->id;
 
@@ -95,7 +90,6 @@ class SingleSessionManageController extends Controller
         'price_cents_egp'  => ['sometimes','nullable','integer','min:0'],
         'price_cents_usd'  => ['sometimes','nullable','integer','min:0'],
 
-        // compat
         'price_cents'      => ['sometimes','nullable','integer','min:0'],
         'currency'         => ['sometimes','nullable','string','size:3'],
 
@@ -104,14 +98,12 @@ class SingleSessionManageController extends Controller
         'is_active'        => ['sometimes','boolean'],
     ]);
 
-    // compat mapping
     if (!isset($data['price_cents_egp']) && !isset($data['price_cents_usd']) && array_key_exists('price_cents', $data)) {
         $cur = strtoupper((string)($data['currency'] ?? $offer->currency ?? 'EGP'));
         if ($cur === 'USD') $data['price_cents_usd'] = (int) ($data['price_cents'] ?? 0);
         else $data['price_cents_egp'] = (int) ($data['price_cents'] ?? 0);
     }
 
-    // Apply updates safely
     $newEgp = array_key_exists('price_cents_egp', $data) ? (int)($data['price_cents_egp'] ?? 0) : (int)($offer->price_cents_egp ?? 0);
     $newUsd = array_key_exists('price_cents_usd', $data) ? (int)($data['price_cents_usd'] ?? 0) : (int)($offer->price_cents_usd ?? 0);
 
@@ -128,7 +120,6 @@ class SingleSessionManageController extends Controller
     if (array_key_exists('discount_percent', $data)) $update['discount_percent'] = (float) $data['discount_percent'];
     if (array_key_exists('is_active', $data)) $update['is_active'] = (bool) $data['is_active'];
 
-    // legacy sync (اختياري)
     $update['price_cents'] = $newEgp > 0 ? $newEgp : $newUsd;
     $update['currency'] = $newEgp > 0 ? 'EGP' : 'USD';
 
@@ -140,7 +131,7 @@ class SingleSessionManageController extends Controller
     ]);
 
     return new SingleSessionOfferResource($offer->fresh()->load('therapist.user'));
-}
+    }
 
 
     public function deactivate(Request $r)
